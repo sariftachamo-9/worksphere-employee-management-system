@@ -1,0 +1,556 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- Premium Dashboard Styles -->
+<style id="dashboard-core-styles" nonce="{{ csp_nonce() }}">
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800;900&family=Space+Mono:wght@400;700&display=swap');
+    
+    :root {
+        --dash-primary: #10b981; /* Logo Green */
+        --dash-secondary: #f97316; /* Logo Orange */
+        --dash-accent: #fbbf24; /* Amber Accent */
+        --dash-bg: #f8fafc;
+    }
+
+    /* Skeleton Loading Animation */
+    @keyframes skeleton-shimmer {
+        0% { background-position: -200% 0; }
+        100% { background-position: 200% 0; }
+    }
+    .shimmer {
+        background: linear-gradient(90deg, #f1f5f9 25%, #f8fafc 50%, #f1f5f9 75%);
+        background-size: 200% 100%;
+        animation: skeleton-shimmer 1.5s infinite linear;
+    }
+
+    /* Modern Calendar Styling */
+    .fc { font-family: 'Inter', sans-serif; border: none !important; }
+    .fc-theme-standard td, .fc-theme-standard th { border-color: #f1f5f9 !important; }
+    .fc-col-header-cell { background: transparent; padding: 20px 0 !important; border: none !important; }
+    .fc-col-header-cell-cushion { 
+        font-size: 11px; font-weight: 800; color: #94a3b8; 
+        text-transform: uppercase; letter-spacing: 0.15em; 
+    }
+    .fc-daygrid-day-number { font-size: 14px; font-weight: 700; color: #cbd5e1; padding: 12px !important; }
+    .fc-day-today { background: rgba(249, 115, 22, 0.03) !important; }
+    .fc-daygrid-day:hover { background: #f8fafc; cursor: pointer; }
+    
+    /* Saturday Legend */
+    .saturday-holiday { background-color: #eff6ff !important; position: relative; }
+    .saturday-holiday::after {
+        content: 'HOLIDAY';
+        position: absolute; bottom: 8px; right: 8px;
+        font-size: 9px; font-weight: 900; color: #2563eb;
+        letter-spacing: 0.05em;
+    }
+
+    /* Custom Transitions */
+    .hover-lift { transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+    .hover-lift:hover { transform: translateY(-4px); }
+
+    /* Custom scrollbar */
+    .notice-scroll::-webkit-scrollbar { width: 4px; }
+    .notice-scroll::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+
+    /* Mobile Responsiveness for FullCalendar Header */
+    @media (max-width: 768px) {
+        .fc-header-toolbar {
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 10px;
+            align-items: center !important;
+        }
+        .fc-toolbar-chunk {
+            display: flex;
+            justify-content: center;
+            width: 100%;
+        }
+        .fc-toolbar-title {
+            font-size: 1.25rem !important;
+            text-align: center;
+        }
+        .fc-button {
+            padding: 0.4rem 0.6rem !important;
+            font-size: 10px !important;
+        }
+    }
+
+    /* Container Adjustments on Mobile */
+    @media (max-width: 640px) {
+        .min-h-screen {
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
+            padding-top: 1.5rem !important;
+        }
+        .max-w-\[1500px\] {
+            gap: 1.5rem !important;
+        }
+        .grid {
+            gap: 1rem !important;
+        }
+    }
+
+    /* Notice Popup Animation */
+    @keyframes notice-slip-fade {
+        0% { transform: translateY(-20px); opacity: 0; }
+        5% { transform: translateY(0); opacity: 1; }
+        95% { transform: translateY(0); opacity: 1; }
+        100% { transform: translateY(-20px); opacity: 0; }
+    }
+    .notice-popup { animation: notice-slip-fade 4s ease-in-out forwards; }
+</style>
+
+<!-- SERVER DATA BRIDGE (Prevents JS Linting Errors) -->
+<div id="dash-meta-bridge" style="display:none"
+     data-role="{{ current_user.role }}"
+     data-boot-id="{{ BOOT_ID }}"
+     data-ot-rate="{{ current_user.profile.overtime_rate if current_user.profile else 0 }}"
+     data-base-salary="{{ current_user.profile.base_salary if current_user.profile else 0 }}"
+     data-attendance-checkin="{{ attendance.check_in.isoformat() if (attendance and attendance.check_in) else '' }}"
+     data-attendance-checkout="{{ attendance.check_out.isoformat() if (attendance and attendance.check_out) else '' }}"
+     data-attendance-break-start="{{ attendance.break_start.isoformat() if (attendance and attendance.break_start) else '' }}"
+     data-attendance-break-end="{{ attendance.break_end.isoformat() if (attendance and attendance.break_end) else '' }}"
+     data-tz-offset="{{ tz_offset }}"
+     data-stats-url="{{ url_for('staff.get_attendance_stats') }}"
+     data-events-url="{{ url_for('staff.attendance_events') }}"
+     data-checkin-url="{{ url_for('staff.check_in') }}"
+     data-checkout-url="{{ url_for('staff.check_out') }}"
+     data-break-start-url="{{ url_for('staff.start_break') }}"
+     data-break-end-url="{{ url_for('staff.end_break') }}"
+     data-initial-score="{{ initial_stats.attendance_score }}"
+     data-initial-leaves="{{ initial_stats.leave_balance }}"
+     data-initial-workshop="{{ initial_stats.workshop_status }}"
+     data-initial-payment="{{ initial_stats.payment_status }}"
+     data-csrf="{{ csrf_token() }}">
+</div>
+{% if show_notice_popup and latest_notice %}
+<div class="fixed top-24 left-1/2 -translate-x-1/2 z-[200] w-full max-w-lg px-6 pointer-events-none">
+    <div class="notice-popup bg-white border-2 border-orange-100 shadow-2xl rounded-3xl p-6 flex items-start space-x-6">
+        <div class="w-14 h-14 bg-orange-100 rounded-2xl flex items-center justify-center flex-shrink-0 text-orange-600">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+        </div>
+        <div class="flex-1">
+            <p class="text-[10px] font-black text-orange-600 uppercase tracking-widest mb-1">System Update</p>
+            <h4 class="text-lg font-black text-slate-800 leading-tight mb-1">{{ latest_notice.title }}</h4>
+            <p class="text-sm text-slate-600 line-clamp-2">{{ latest_notice.content }}</p>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="min-h-screen bg-[#f8fafc] px-4 py-8 md:px-10 lg:py-12" x-data="dashboardUI()">
+    <div class="max-w-[1500px] mx-auto space-y-8">
+        <!-- GPS Location / Bypass Status Banner -->
+        <div x-show="showGpsBanner" x-cloak x-transition
+             class="rounded-[2rem] p-5 flex items-center justify-between transition-all duration-300 shadow-sm border"
+             :class="gpsStatus === 'inside' ? 'bg-emerald-50/50 border-emerald-100' : gpsStatus === 'outside' ? 'bg-rose-50/50 border-rose-100' : 'bg-amber-50/50 border-amber-100'">
+            <div class="flex items-center space-x-4">
+                <div class="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-sm"
+                     :class="gpsStatus === 'inside' ? 'bg-emerald-100 text-emerald-600' : gpsStatus === 'outside' ? 'bg-rose-100 text-rose-600' : 'bg-amber-100 text-amber-600'">
+                    <svg x-show="gpsStatus === 'inside'" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.242-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    <svg x-show="gpsStatus === 'outside'" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                    <svg x-show="gpsStatus === 'checking'" class="w-6 h-6 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                    <svg x-show="gpsStatus === 'denied'" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
+                </div>
+                <div>
+                    <p class="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-0.5">Location Status</p>
+                    <p class="text-sm font-bold"
+                       :class="gpsStatus === 'inside' ? 'text-emerald-700' : gpsStatus === 'outside' ? 'text-rose-700' : 'text-amber-700'"
+                       x-text="gpsMessage">Checking location...</p>
+                </div>
+            </div>
+            <button @click="refreshGps()" x-show="!checkedIn && !shiftCompleted"
+                    class="px-6 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 transition-all shadow-sm active:scale-95">
+                Refresh
+            </button>
+        </div>
+        
+        <!-- SECTION 1: HEADER & COMMAND CENTER -->
+        <header class="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-8">
+            <div>
+                <nav class="flex items-center space-x-2 text-[11px] font-black uppercase tracking-widest text-slate-400 mb-2">
+                    <span class="hover:text-slate-600 cursor-pointer">Dashboard</span>
+                    <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+                    <span class="text-orange-600" x-text="roleLabel">Employee</span>
+                </nav>
+                <h1 class="text-4xl lg:text-5xl font-black text-slate-900 tracking-tight font-['Outfit']">
+                    Welcome, <span class="text-orange-600">{{ current_user.profile.full_name.split(' ')[0] if current_user.profile else current_user.username }}</span>
+                </h1>
+                
+                {% if current_user.location_bypass_until and current_user.location_bypass_until > now %}
+                <div class="mt-4 inline-flex items-center space-x-2 px-4 py-2 bg-emerald-50 border border-emerald-200 rounded-xl shadow-sm">
+                    <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                    <span class="text-xs font-black uppercase tracking-widest text-emerald-700">Location Bypass Active</span>
+                    <span class="text-[10px] font-bold text-emerald-600/80 ml-2">(Expires: {{ current_user.location_bypass_until.strftime('%H:%M, %b %d') }})</span>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- UNIFIED COMMAND CENTER -->
+            <div class="w-full lg:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-4 bg-white p-3 rounded-[2rem] border border-slate-200/60 shadow-2xl shadow-slate-200/50">
+                
+                <!-- TIMER COMPONENT -->
+                <div class="flex items-center space-x-4 px-6 py-3 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div class="relative">
+                        <div class="w-3 h-3 rounded-full" :class="timerPulseClass"></div>
+                        <div class="absolute inset-0 w-3 h-3 rounded-full animate-ping" :class="timerPulseClass"></div>
+                    </div>
+                    <span class="text-2xl font-['Space_Mono'] font-bold text-slate-800 tabular-nums tracking-tight" x-text="shiftTimer">00:00:00</span>
+                </div>
+
+                <!-- DYNAMIC ACTION BUTTONS -->
+                <div class="flex items-center gap-2">
+                    <!-- Check-in Button -->
+                    <template x-if="!checkedIn && !shiftCompleted">
+                        <button @click="doAction('checkin')" :disabled="loading"
+                                class="flex-1 sm:flex-none px-10 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black uppercase tracking-wider text-[11px] transition-all active:scale-95 shadow-lg shadow-emerald-200 disabled:opacity-50">
+                            <span x-text="loading ? 'Verifying...' : 'Check In'">Check In</span>
+                        </button>
+                    </template>
+
+                    <!-- Break Toggle -->
+                    <template x-if="checkedIn && !shiftCompleted">
+                        <button @click="doAction(onBreak ? 'end_break' : 'start_break')" :disabled="loading || (!onBreak && breakCompleted)"
+                                class="px-8 py-4 rounded-2xl font-black uppercase tracking-wider text-[11px] transition-all flex items-center space-x-2 shadow-lg"
+                                :class="onBreak ? 'bg-orange-600 hover:bg-orange-700 text-white shadow-orange-200' : (breakCompleted ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none' : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-100')">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path x-show="!onBreak" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                <path x-show="onBreak" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
+                            </svg>
+                            <span x-text="onBreak ? 'End Break' : (breakCompleted ? 'Break Taken' : 'Take Break')"></span>
+                        </button>
+                    </template>
+
+                    <!-- Check-out Button -->
+                    <template x-if="checkedIn && !shiftCompleted">
+                        <button @click="doAction('checkout')" :disabled="onBreak || loading"
+                                class="px-8 py-4 bg-rose-600 hover:bg-rose-700 text-white rounded-2xl font-black uppercase tracking-wider text-[11px] transition-all shadow-lg shadow-rose-200 disabled:opacity-30">
+                            Check Out
+                        </button>
+                    </template>
+
+                    <!-- Shift Complete Status -->
+                    <template x-if="shiftCompleted">
+                        <div class="px-10 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase tracking-wider text-[11px] border border-slate-200 flex items-center space-x-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
+                            <span>Shift Fully Logged</span>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </header>
+
+        <!-- SECTION 2: INSIGHT GRID (STATS) -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+            
+            <!-- Attendance Metric -->
+            <div class="bg-white p-6 rounded-[2.5rem] border border-slate-200/50 shadow-sm hover-lift group">
+                <div class="flex justify-between items-start mb-6">
+                    <div class="w-14 h-14 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600 transition-colors group-hover:bg-emerald-600 group-hover:text-white">
+                        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    </div>
+                </div>
+                <p class="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-1">Monthly Attendance</p>
+                <div class="flex items-baseline space-x-1">
+                    <span class="text-4xl font-black text-slate-900 tracking-tighter" x-text="attendanceScore + '%'">0%</span>
+                </div>
+            </div>
+
+            <!-- Leave Metric -->
+            <div class="bg-white p-6 rounded-[2.5rem] border border-slate-200/50 shadow-sm hover-lift group">
+                <div class="flex justify-between items-start mb-6">
+                    <div class="w-14 h-14 bg-orange-50 rounded-2xl flex items-center justify-center text-orange-600 transition-colors group-hover:bg-orange-600 group-hover:text-white">
+                        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                    </div>
+                </div>
+                <p class="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-1">Leaves Remaining</p>
+                <div class="flex items-baseline space-x-2">
+                    <span class="text-4xl font-black text-slate-900 tracking-tighter" x-text="leaveBalance">0</span>
+                    <span class="text-lg font-bold text-slate-400">Days</span>
+                </div>
+            </div>
+
+            <!-- Role-Specific Finance/Progress Metric -->
+            <div class="bg-white p-6 rounded-[2.5rem] border border-slate-200/50 shadow-sm hover-lift group">
+                <div class="flex justify-between items-start mb-6">
+                    <div class="w-14 h-14 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-600 transition-colors group-hover:bg-amber-600 group-hover:text-white">
+                        <template x-if="isEmployee">
+                            <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        </template>
+                        <template x-if="!isEmployee">
+                            <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+                        </template>
+                    </div>
+                </div>
+                <p class="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-1" x-text="isEmployee ? 'Monthly Base Salary' : 'Program Milestone'">Stat</p>
+                <div class="flex items-baseline space-x-1">
+                    <template x-if="isEmployee">
+                        <span class="text-3xl font-black text-slate-900 tracking-tighter">Rs.<span x-text="baseSalary">0</span></span>
+                    </template>
+                    <template x-if="!isEmployee">
+                        <span class="text-3xl font-black text-slate-900 tracking-tighter" x-text="milestoneLabel">Ongoing</span>
+                    </template>
+                </div>
+            </div>
+
+            <!-- OVERTIME / STATUS (Dynamic 4th Column) -->
+            <template x-if="isEmployee">
+                <div class="bg-white p-6 rounded-[2.5rem] border border-slate-200/50 shadow-sm hover-lift group relative overflow-hidden">
+                    <div class="flex justify-between items-start mb-6">
+                        <div class="w-14 h-14 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-600 transition-colors group-hover:bg-amber-600 group-hover:text-white">
+                            <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        </div>
+                    </div>
+                    <p class="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-1">Estimated Overtime</p>
+                    <div class="flex items-baseline space-x-2">
+                        <span class="text-3xl font-black text-slate-900 tracking-tighter" x-text="'Rs.' + estimatedOT">Rs.0</span>
+                        <span class="text-[10px] font-bold text-amber-600/60" x-text="'Rate: Rs.' + otRate + '/hr'"></span>
+                    </div>
+                </div>
+            </template>
+            <template x-if="!isEmployee">
+                <div class="bg-white p-6 rounded-[2.5rem] border border-slate-200/50 shadow-sm hover-lift group relative overflow-hidden">
+                    <div class="flex justify-between items-start mb-6">
+                        <div class="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600 transition-colors group-hover:bg-blue-600 group-hover:text-white">
+                            <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
+                        </div>
+                    </div>
+                    <p class="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-1">Program Status</p>
+                    <div class="flex items-baseline space-x-2">
+                        <span class="text-2xl font-black text-slate-900 tracking-tighter" x-text="workshopStatus">Ongoing</span>
+                        <span class="text-[10px] font-bold text-blue-600/60" x-text="paymentStatus">Paid</span>
+                    </div>
+                </div>
+            </template>
+
+            <!-- SECURITY BADGE TRIGGER -->
+            <div @click="window.location.href='/qr/my-badge'" 
+                 class="bg-orange-600 p-6 rounded-[2.5rem] shadow-xl shadow-orange-200 hover-lift group cursor-pointer border-4 border-white">
+                <div class="flex justify-between items-start mb-6">
+                    <div class="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center text-white backdrop-blur-md">
+                        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v-4m6 0h-2m-6 0H6m6 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    </div>
+                </div>
+                <p class="text-[11px] font-black text-orange-100 uppercase tracking-widest mb-1">Company Access</p>
+                <h3 class="text-xl font-black text-white tracking-tight">Security Badge</h3>
+            </div>
+        </div>
+
+        <!-- SECTION 3: CALENDAR -->
+        <div class="bg-white rounded-[3rem] border border-slate-200/50 shadow-sm overflow-hidden mb-8">
+            <div class="p-8 md:p-10 border-b border-slate-50 flex items-center justify-between">
+                <div>
+                    <h2 class="text-2xl font-black text-slate-900 tracking-tight font-['Outfit']">Attendance Log</h2>
+                    <p class="text-sm font-bold text-slate-400">Review your past performance and monthly trends.</p>
+                </div>
+            </div>
+            <div class="p-4 md:p-8">
+                <div id="calendar" class="min-h-[500px]"></div>
+            </div>
+        </div>
+
+        <!-- SECTION 4: NOTICE BOARD -->
+        <div class="bg-white rounded-[3rem] border border-slate-200/50 shadow-sm overflow-hidden">
+            <div class="p-8 md:p-10 border-b border-slate-50 bg-slate-50/30">
+                <h3 class="text-xl font-black text-slate-900 tracking-tight font-['Outfit']">Notice Board</h3>
+            </div>
+            <div class="p-8 md:p-10 space-y-4">
+                {% if notices %}
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {% for notice in notices %}
+                        <div class="p-6 rounded-[2rem] bg-slate-50 border border-transparent hover:border-orange-100 hover:bg-white transition-all group shadow-sm hover:shadow-md">
+                            <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 block">{{ notice.created_at.strftime('%d %b %Y') }}</span>
+                            <h4 class="text-base font-black text-slate-800 group-hover:text-orange-600 mb-2 leading-tight">{{ notice.title }}</h4>
+                            <p class="text-sm text-slate-500 line-clamp-3 leading-relaxed">{{ notice.content }}</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="py-20 flex flex-col items-center justify-center text-center opacity-40">
+                        <svg class="w-16 h-16 mb-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10l4 4v10a2 2 0 01-2 2z"/></svg>
+                        <p class="text-sm font-black uppercase tracking-[0.2em] text-slate-400">No New Notices</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- EXTERNAL LIBRARIES (LOCALIZED) -->
+<link href="{{ url_for('static', filename='css/vendor/fullcalendar.min.css') }}" rel='stylesheet' />
+<script src="{{ url_for('static', filename='js/vendor/fullcalendar.min.js') }}"></script>
+
+<!-- REBUILT DASHBOARD LOGIC (V2) -->
+<script nonce="{{ csp_nonce() }}">
+function dashboardUI() {
+    const bridge = document.getElementById('dash-meta-bridge').dataset;
+    return {
+        role: bridge.role,
+        isEmployee: bridge.role === 'employee',
+        roleLabel: bridge.role.charAt(0).toUpperCase() + bridge.role.slice(1),
+        checkedIn: false,
+        onBreak: false,
+        breakCompleted: false,
+        shiftCompleted: false,
+        loading: false,
+        statsLoaded: true,
+        showQR: false,
+        attendanceScore: bridge.initialScore || '0',
+        leaveBalance: bridge.initialLeaves || '0',
+        baseSalary: parseFloat(bridge.baseSalary || 0).toLocaleString(),
+        milestoneLabel: bridge.initialWorkshop || '...',
+        workshopStatus: bridge.initialWorkshop || 'Ongoing',
+        paymentStatus: bridge.initialPayment || 'Pending',
+        checkInTime: null,
+        shiftTimer: '00:00:00',
+        estimatedOT: '0',
+        otRate: parseFloat(bridge.otRate || 0),
+        timerPulseClass: 'bg-slate-300',
+        gpsStatus: 'checking',
+        gpsMessage: 'Detecting location...',
+        gpsDistance: null,
+        gpsLat: null,
+        gpsLon: null,
+        showGpsBanner: true,
+        hasBypass: {{ 'true' if current_user.location_bypass_until and current_user.location_bypass_until > now else 'false' }},
+
+        init() {
+            this.initSession();
+            this.fetchStats();
+            this.$nextTick(() => this.initCalendar());
+            if (this.hasBypass) {
+                this.gpsStatus = 'inside';
+                this.gpsMessage = 'Location Bypass Active';
+            } else if (this.checkedIn || this.shiftCompleted) {
+                this.gpsStatus = 'inside';
+                this.gpsMessage = 'Location Verified';
+            } else {
+                this.refreshGps();
+            }
+        },
+        initSession() {
+            const ciRaw = bridge.attendanceCheckin;
+            const coRaw = bridge.attendanceCheckout;
+            const bsRaw = bridge.attendanceBreakStart;
+            const beRaw = bridge.attendanceBreakEnd;
+            const tz = bridge.tzOffset;
+            if (ciRaw) {
+                const ciDate = new Date(ciRaw + tz);
+                this.checkInTime = ciDate;
+                if (!coRaw) {
+                    this.checkedIn = true;
+                    this.timerPulseClass = 'bg-emerald-500';
+                    this.startTimer();
+                    if (bsRaw && !beRaw) {
+                        this.onBreak = true;
+                        this.timerPulseClass = 'bg-amber-500';
+                    } else if (bsRaw && beRaw) {
+                        this.breakCompleted = true;
+                    }
+                } else {
+                    this.shiftCompleted = true;
+                    this.timerPulseClass = 'bg-slate-300';
+                    this.setStaticTimer(ciDate, new Date(coRaw + tz));
+                }
+            }
+        },
+        async fetchStats() {
+            try {
+                const r = await fetch(bridge.statsUrl);
+                const d = await r.json();
+                this.attendanceScore = d.attendance_score || '0';
+                this.leaveBalance = d.leave_balance || '0';
+                this.milestoneLabel = d.workshop_status || 'Ongoing';
+            } catch(e) { console.error('Stats fetch failed', e); }
+        },
+        async doAction(type) {
+            const urlMap = {
+                'checkin': bridge.checkinUrl,
+                'checkout': bridge.checkoutUrl,
+                'start_break': bridge.breakStartUrl,
+                'end_break': bridge.breakEndUrl
+            };
+            if (type === 'checkout' && !confirm('Submit shift for review?')) return;
+            this.loading = true;
+            let payload = {};
+            if (type === 'checkin' && !this.hasBypass) {
+                try {
+                    const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, {timeout:10000}));
+                    payload = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+                } catch(e) { console.warn("GPS Request Failed"); }
+            }
+            try {
+                const r = await fetch(urlMap[type], {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': bridge.csrf },
+                    body: JSON.stringify(payload)
+                });
+                const d = await r.json();
+                if (d.success) { window.showToast(d.message, 'success'); setTimeout(() => location.reload(), 1000); }
+                else { window.showToast(d.message, 'error'); this.loading = false; }
+            } catch(e) { this.loading = false; window.showToast('Network error', 'error'); }
+        },
+        refreshGps() {
+            if (this.checkedIn || this.shiftCompleted || this.hasBypass) return;
+            this.gpsStatus = 'checking';
+            if (!navigator.geolocation) { this.gpsStatus = 'denied'; return; }
+            navigator.geolocation.getCurrentPosition(async (pos) => {
+                this.gpsLat = pos.coords.latitude;
+                this.gpsLon = pos.coords.longitude;
+                try {
+                    const r = await fetch('{{ url_for("staff.check_location") }}', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': bridge.csrf },
+                        body: JSON.stringify({ latitude: this.gpsLat, longitude: this.gpsLon })
+                    });
+                    const d = await r.json();
+                    this.gpsStatus = d.allowed ? 'inside' : 'outside';
+                    this.gpsMessage = d.allowed ? 'Within office geofence' : d.message;
+                } catch(e) { this.gpsStatus = 'outside'; }
+            }, (err) => { this.gpsStatus = 'denied'; }, {timeout:10000});
+        },
+        startTimer() {
+            const update = () => {
+                const diff = Math.floor((new Date() - this.checkInTime) / 1000);
+                const h = Math.floor(diff/3600), m = Math.floor((diff%3600)/60), s = diff%60;
+                this.shiftTimer = [h, m, s].map(v=>v<10?'0'+v:v).join(':');
+                if (this.isEmployee && diff > 28800) {
+                    this.estimatedOT = Math.floor((diff-28800)/3600 * this.otRate).toLocaleString();
+                }
+            };
+            update(); setInterval(update, 1000);
+        },
+        setStaticTimer(start, end) {
+            const diff = Math.floor((end - start) / 1000);
+            const h = Math.floor(diff/3600), m = Math.floor((diff%3600)/60), s = diff%60;
+            this.shiftTimer = [h, m, s].map(v=>v<10?'0'+v:v).join(':');
+        },
+        initCalendar() {
+            const el = document.getElementById('calendar');
+            if (!el) return;
+            const isMob = window.innerWidth < 768;
+            const cal = new FullCalendar.Calendar(el, {
+                initialView: isMob ? 'listMonth' : 'dayGridMonth',
+                headerToolbar: { left: 'prev,next today', center: 'title', right: isMob ? '' : 'dayGridMonth,listMonth' },
+                events: bridge.eventsUrl,
+                eventTimeFormat: { hour: 'numeric', minute: '2-digit', meridiem: 'short' },
+                height: 'auto',
+                eventsSet: (evs) => {
+                    setTimeout(() => {
+                        el.querySelectorAll('.fc-daygrid-day').forEach(cell => {
+                            const d = cell.getAttribute('data-date');
+                            if (d && new Date(d).getDay() === 6 && !evs.some(e => e.start.startsWith(d))) cell.classList.add('saturday-holiday');
+                        });
+                    }, 50);
+                }
+            });
+            cal.render();
+            window.addEventListener('resize', () => {
+                const nowMob = window.innerWidth < 768;
+                if (nowMob !== (cal.view.type === 'listMonth')) cal.changeView(nowMob ? 'listMonth' : 'dayGridMonth');
+            });
+        }
+    };
+}
+</script>
+{% endblock %}

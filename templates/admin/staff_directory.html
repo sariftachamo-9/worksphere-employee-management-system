@@ -1,0 +1,550 @@
+{% extends "base.html" %}
+
+{% block admin_title %}{{ admin_title or 'Staff Management' }}{% endblock %}
+
+{% block content %}
+<div class="space-y-8" id="employee-management-root">
+    <!-- Location Bypass Modal -->
+    <div id="bypass-modal" class="fixed inset-0 z-50 overflow-y-auto hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div id="bypass-modal-backdrop" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity" aria-hidden="true"></div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <div class="inline-block align-bottom bg-white rounded-[2rem] text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-md sm:w-full border border-slate-100">
+                <div class="bg-white px-6 pt-6 pb-6 sm:p-8 sm:pb-8">
+                    <div class="sm:flex sm:items-start justify-between mb-6">
+                        <div class="mt-3 text-center sm:mt-0 sm:text-left">
+                            <h3 class="text-xl leading-6 font-black text-slate-800 flex items-center" id="modal-title">
+                                <span class="w-3 h-6 bg-amber-500 rounded-full mr-3 flex-shrink-0"></span>
+                                Manage Location Bypass
+                            </h3>
+                            <p class="text-sm text-slate-500 mt-2">
+                                Update access for <span id="bypass-user-name" class="font-bold text-slate-800"></span>
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div id="bypass-current-status" class="mb-4 hidden rounded-2xl border px-4 py-3 text-sm font-semibold"></div>
+
+                    <div class="space-y-3">
+                        <button type="button" data-bypass-hours="5" class="bypass-option-btn w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100 rounded-xl transition border border-slate-200">
+                            <span class="font-bold text-slate-700">5 Hours</span>
+                            <span class="text-xs text-slate-400">Short (5hr)</span>
+                        </button>
+                        <button type="button" data-bypass-hours="24" class="bypass-option-btn w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100 rounded-xl transition border border-slate-200">
+                            <span class="font-bold text-slate-700">24 Hours</span>
+                            <span class="text-xs text-slate-400">1 Day</span>
+                        </button>
+                        <button type="button" data-bypass-hours="96" class="bypass-option-btn w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100 rounded-xl transition border border-slate-200">
+                            <span class="font-bold text-slate-700">4 Days</span>
+                            <span class="text-xs text-slate-400">96 Hours</span>
+                        </button>
+                        <button type="button" data-bypass-hours="168" class="bypass-option-btn w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100 rounded-xl transition border border-slate-200">
+                            <span class="font-bold text-slate-700">1 Week</span>
+                            <span class="text-xs text-slate-400">168 Hours</span>
+                        </button>
+                        <button type="button" data-bypass-hours="-1" class="bypass-option-btn w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100 rounded-xl transition border border-slate-200">
+                            <span class="font-bold text-slate-700">Until Turned Off</span>
+                            <span class="text-xs text-slate-400">No Expiration</span>
+                        </button>
+                    </div>
+                    
+                    <div class="mt-6 flex items-center justify-between gap-3">
+                        <button type="button" id="revoke-bypass-btn" class="hidden px-4 py-2 text-sm font-black text-rose-600 bg-rose-50 border border-rose-200 rounded-xl hover:bg-rose-100 transition">
+                            Revoke Bypass
+                        </button>
+                        <button type="button" id="bypass-modal-cancel" class="ml-auto px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+            <h3 class="text-xl font-black text-slate-800 tracking-tight">{{ admin_title or 'Staff Management' }}</h3>
+            <p class="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Directory of all registered {{ (title or 'Staff').lower() }}</p>
+        </div>
+        {% if add_endpoint %}
+        <a href="{{ url_for(add_endpoint) }}" class="inline-flex items-center space-x-2 bg-orange-500 text-white px-6 py-3.5 rounded-2xl font-bold hover:bg-orange-600 transition shadow-lg shadow-orange-100/50 group">
+            <svg class="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+            <span class="text-sm uppercase tracking-widest">{{ add_label or 'Add Employee' }}</span>
+        </a>
+        {% endif %}
+    </div>
+
+    <!-- Role Tabs (Only for Remove Staff) -->
+    {% if title == 'Remove Staff' %}
+    <div class="flex items-center space-x-2 bg-white rounded-[1.5rem] shadow-sm border border-slate-100 p-2 overflow-x-auto">
+        <a href="{{ request.path }}?search={{ curr_search }}&dept={{ curr_dept }}&desig={{ curr_desig }}" 
+           class="px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest whitespace-nowrap transition-all {{ 'bg-slate-900 text-white shadow-lg' if not curr_role else 'text-slate-500 hover:bg-slate-50' }}">
+            All Persons
+        </a>
+        <a href="{{ request.path }}?role=employee&search={{ curr_search }}&dept={{ curr_dept }}&desig={{ curr_desig }}" 
+           class="px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest whitespace-nowrap transition-all {{ 'bg-slate-900 text-white shadow-lg' if curr_role == 'employee' else 'text-slate-500 hover:bg-slate-50' }}">
+            Employees
+        </a>
+        <a href="{{ request.path }}?role=intern&search={{ curr_search }}&dept={{ curr_dept }}&desig={{ curr_desig }}" 
+           class="px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest whitespace-nowrap transition-all {{ 'bg-slate-900 text-white shadow-lg' if curr_role == 'intern' else 'text-slate-500 hover:bg-slate-50' }}">
+            Interns
+        </a>
+        <a href="{{ request.path }}?role=student&search={{ curr_search }}&dept={{ curr_dept }}&desig={{ curr_desig }}" 
+           class="px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest whitespace-nowrap transition-all {{ 'bg-slate-900 text-white shadow-lg' if curr_role == 'student' else 'text-slate-500 hover:bg-slate-50' }}">
+            Students
+        </a>
+    </div>
+    {% endif %}
+
+    <!-- Search & Filter Bar -->
+    <div class="bg-white rounded-[1.5rem] shadow-sm border border-slate-100 p-6">
+        <form method="GET" class="flex flex-col md:flex-row items-end gap-6">
+            {% if curr_role %}
+            <input type="hidden" name="role" value="{{ curr_role }}">
+            {% endif %}
+            <div class="flex-grow space-y-2">
+                <label class="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Search Staff</label>
+                <div class="relative group">
+                    <input type="text" name="search" value="{{ curr_search }}" placeholder="Search by name, ID or email..." 
+                        class="w-full bg-slate-50 border-none rounded-xl px-10 py-3 text-sm font-bold text-slate-900 focus:ring-2 focus:ring-orange-100 transition">
+                    <svg class="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2 group-focus-within:text-orange-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                </div>
+            </div>
+            
+            <div class="w-full md:w-48 space-y-2">
+                <label class="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Department</label>
+                <select name="dept" class="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-orange-100 transition">
+                    <option value="">All Departments</option>
+                    {% for d in depts %}
+                    <option value="{{ d }}" {{ 'selected' if d == curr_dept }}>{{ d|upper }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="w-full md:w-48 space-y-2">
+                <label class="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Designation</label>
+                <select name="desig" class="w-full bg-slate-50 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-orange-100 transition">
+                    <option value="">All Designations</option>
+                    {% for d in desigs %}
+                    <option value="{{ d }}" {{ 'selected' if d == curr_desig }}>{{ d|upper }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="flex items-center space-x-3">
+                <button type="submit" class="bg-slate-900 text-white px-8 py-3 rounded-xl font-bold hover:bg-black transition shadow-lg text-sm uppercase tracking-widest">
+                    Filter
+                </button>
+                <a href="{{ request.path }}" class="bg-slate-100 text-slate-500 px-4 py-3 rounded-xl font-bold hover:bg-slate-200 transition text-sm">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                </a>
+            </div>
+        </form>
+    </div>
+
+    <!-- Table Card -->
+    <div class="bg-white rounded-[1.5rem] shadow-sm border border-slate-100/60 overflow-hidden">
+        <!-- Main Staff List -->
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+                <thead>
+                    <tr class="bg-slate-50/30 border-b border-slate-50">
+                        <th class="px-5 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Name</th>
+                        <th class="px-5 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                            {% if 'Student' in title %}Course{% else %}Department{% endif %}
+                        </th>
+                        <th class="px-5 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Contact</th>
+                        {% if 'Student' not in title %}
+                        <th class="px-5 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                            {% if 'Intern' in title %}Stipend{% else %}Salary{% endif %}
+                        </th>
+                        {% endif %}
+                        <th class="px-5 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-50">
+                    {% for user in users %}
+                    <tr class="group hover:bg-slate-50/40 transition-colors duration-200 {{ 'opacity-60 bg-slate-50/30' if not user.is_active else '' }}">
+                        <td class="px-5 py-3">
+                            <div class="flex items-center space-x-3">
+                                <div class="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center text-[#d46b08] font-black text-[10px] flex-shrink-0">
+                                    {{ (user.profile.full_name or 'User')[0]|upper }}{{ (user.profile.full_name or 'User').split(' ')[1][0]|upper if ' ' in (user.profile.full_name or '') else (user.profile.full_name or 'User')[1]|upper }}
+                                </div>
+                                <div>
+                                    <p class="text-[12px] font-bold text-slate-800 leading-tight">{{ user.profile.full_name or 'New Employee' }}</p>
+                                    <p class="text-[10px] text-slate-400 font-medium">{{ user.email }}</p>
+                                    {% if not user.is_active %}
+                                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-rose-100 text-rose-700">
+                                        Inactive / Removed
+                                    </span>
+                                    {% else %}
+                                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-700">
+                                        Active
+                                    </span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-5 py-3">
+                            {% if user.role == 'student' %}
+                                <span class="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-600">
+                                    {{ user.profile.designation|upper or 'UNASSIGNED COURSE' }}
+                                </span>
+                            {% else %}
+                                {% set dept = user.profile.department|lower %}
+                                <span class="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider 
+                                    {% if 'it' in dept %}bg-emerald-50 text-emerald-600
+                                    {% elif 'hr' in dept %}bg-rose-50 text-rose-600
+                                    {% elif 'finance' in dept %}bg-purple-50 text-purple-600
+                                    {% elif 'marketing' in dept %}bg-orange-50 text-orange-600
+                                    {% else %}bg-slate-100 text-slate-500{% endif %}">
+                                    {{ user.profile.department|upper or 'UNASSIGNED' }}
+                                </span>
+                                <p class="text-[10px] text-slate-400 font-bold mt-0.5 tracking-tight">{{ user.profile.designation or 'Team Member' }}</p>
+                            {% endif %}
+                        </td>
+                        <td class="px-5 py-3 text-[11px] font-medium text-slate-500">
+                            {{ user.profile.phone or '—' }}
+                        </td>
+                        {% if 'Student' not in title %}
+                        <td class="px-5 py-3 text-[12px] font-bold text-slate-700">
+                            {% if user.role == 'student' %}
+                                <span class="text-slate-400 text-[10px]">—</span>
+                            {% else %}
+                                Rs.{{ "{:,.1f}".format(user.profile.base_salary or 0) }}
+                            {% endif %}
+                        </td>
+                        {% endif %}
+                        <td class="px-5 py-3 whitespace-nowrap">
+                            <div class="flex items-center gap-1.5">
+
+                                {% if title != 'Remove Staff' %}
+                                <!-- Fee / Stipend / Payroll History -->
+                                {% if user.role in ['student', 'intern'] or (user.profile.base_salary or 0) > 0 %}
+                                <a href="{{ url_for('admin.staff_payroll_detail', user_id=user.id) }}"
+                                   class="inline-flex items-center space-x-1 px-2.5 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-xl hover:bg-emerald-100 transition text-[9px] font-black uppercase tracking-widest">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                    <span>{% if user.role == 'student' %}Fee Hist{% elif user.role == 'intern' %}Stipend{% else %}Payroll{% endif %}</span>
+                                </a>
+                                {% endif %}
+
+                                <!-- Attendance Calendar -->
+                                <a href="{{ url_for('admin.staff_attendance_detail', user_id=user.id) }}"
+                                   class="inline-flex items-center space-x-1 px-2.5 py-1.5 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-xl hover:bg-indigo-100 transition text-[9px] font-black uppercase tracking-widest">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                    <span>Attendance</span>
+                                </a>
+
+                                <!-- QR Badge -->
+                                {% if user.role == 'employee' %}
+                                    <a href="{{ url_for('qr.em_qr_gen', user_id=user.id) }}" target="_blank"
+                                       class="inline-flex items-center space-x-1 px-2.5 py-1.5 bg-orange-50 text-orange-700 border border-orange-100 rounded-xl hover:bg-orange-100 transition text-[9px] font-black uppercase tracking-widest">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m0 0L9 8h2v5h2V8h2l-3-4M3 9h18M3 15h18"></path></svg>
+                                        <span>QR Badge</span>
+                                    </a>
+                                {% elif user.role == 'intern' %}
+                                    <a href="{{ url_for('qr.int_qr_gen', user_id=user.id) }}" target="_blank"
+                                       class="inline-flex items-center space-x-1 px-2.5 py-1.5 bg-orange-50 text-orange-700 border border-orange-100 rounded-xl hover:bg-orange-100 transition text-[9px] font-black uppercase tracking-widest">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m0 0L9 8h2v5h2V8h2l-3-4M3 9h18M3 15h18"></path></svg>
+                                        <span>QR Badge</span>
+                                    </a>
+                                {% elif user.role == 'student' %}
+                                    <a href="{{ url_for('qr.std_qr_gen', user_id=user.id) }}" target="_blank"
+                                       class="inline-flex items-center space-x-1 px-2.5 py-1.5 bg-orange-50 text-orange-700 border border-orange-100 rounded-xl hover:bg-orange-100 transition text-[9px] font-black uppercase tracking-widest">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m0 0L9 8h2v5h2V8h2l-3-4M3 9h18M3 15h18"></path></svg>
+                                        <span>QR Badge</span>
+                                    </a>
+                                {% endif %}
+
+                                <!-- Location Bypass -->
+                                <button type="button"
+                                        data-bypass-user-id="{{ user.id }}"
+                                        data-bypass-user-name="{{ user.profile.full_name or user.email }}"
+                                        data-bypass-active="{{ 'true' if user.location_bypass_until and user.location_bypass_until > now else 'false' }}"
+                                        data-bypass-unlimited="{{ 'true' if user.location_bypass_until and user.location_bypass_until.year >= 2099 else 'false' }}"
+                                        data-bypass-expires="{% if user.location_bypass_until and user.location_bypass_until > now and user.location_bypass_until.year < 2099 %}{{ user.location_bypass_until.strftime('%H:%M %d %b %Y') }}{% endif %}"
+                                        title="{% if user.location_bypass_until and user.location_bypass_until > now and user.location_bypass_until.year >= 2099 %}Bypass Active (Unlimited){% elif user.location_bypass_until and user.location_bypass_until > now %}Bypass Active (Expires {{ user.location_bypass_until.strftime('%H:%M %d %b') }}){% else %}Grant Location Bypass{% endif %}"
+                                        class="open-bypass-modal-btn inline-flex items-center justify-center w-7 h-7 border rounded-xl transition
+                                        {% if user.location_bypass_until and user.location_bypass_until > now %}bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100{% else %}bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-100{% endif %}">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                                </button>
+
+                                <!-- Edit Profile -->
+                                <a href="{{ url_for('admin.edit_staff', user_id=user.id) }}"
+                                   class="inline-flex items-center space-x-1 px-2.5 py-1.5 bg-blue-50 text-blue-700 border border-blue-100 rounded-xl hover:bg-blue-100 transition text-[9px] font-black uppercase tracking-widest">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                                    <span>Edit</span>
+                                </a>
+                                {% endif %}
+
+                                <!-- Remove (deactivate access for any non-admin active user) -->
+                                {% if user.role != 'admin' and user.is_active %}
+                                
+                                {% if user.role in ['intern', 'student'] %}
+                                {% set days_passed = (now.date() - user.profile.joining_date).days if user.profile and user.profile.joining_date else 0 %}
+                                {% set months_passed = days_passed / 30.44 %}
+                                {% set duration_passed = months_passed >= 3 %}
+                                
+                                <!-- Complete Course / Internship -->
+                                {% if duration_passed %}
+                                <form action="{{ url_for('admin.complete_staff', user_id=user.id) }}" method="POST" class="inline" onsubmit="return confirm('Are you sure you want to mark this {{ user.role }} as COMPLETED? This will safely preserve their records but they will no longer be able to log in.')">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                                    <button type="submit"
+                                       class="inline-flex items-center space-x-1 px-2.5 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-xl hover:bg-emerald-100 transition text-[9px] font-black uppercase tracking-widest">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                        <span>Complete {{ 'Internship' if user.role == 'intern' else 'Course' }}</span>
+                                    </button>
+                                </form>
+                                {% else %}
+                                <span class="inline-flex items-center space-x-1 px-2.5 py-1.5 bg-slate-100 text-slate-500 rounded-xl text-[9px] font-black uppercase tracking-widest cursor-not-allowed" title="Duration not yet completed ({{ (3 - months_passed)|round(1) }} months remaining)">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                    <span>Ongoing</span>
+                                </span>
+                                {% endif %}
+                                {% endif %}
+
+                                <form action="{{ url_for('admin.remove_staff', user_id=user.id) }}" method="POST" class="inline" onsubmit="return confirm('Are you sure you want to remove this user? They will be marked as inactive and will no longer be able to log in to the website. Historical records are preserved.')">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                                    <button type="submit"
+                                       class="inline-flex items-center space-x-1 px-2.5 py-1.5 bg-rose-50 text-rose-700 border border-rose-100 rounded-xl hover:bg-rose-100 transition text-[9px] font-black uppercase tracking-widest">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21"></path></svg>
+                                        <span>Remove</span>
+                                    </button>
+                                </form>
+                                {% endif %}
+
+                                <!-- Reactivate (for inactive users) -->
+                                {% if not user.is_active %}
+                                <form action="{{ url_for('admin.reactivate_staff', user_id=user.id) }}" method="POST" class="inline" onsubmit="return confirm('Are you sure you want to reactivate this account? The user will regain access to the system.')">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                                    <button type="submit"
+                                       class="inline-flex items-center space-x-1 px-2.5 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-xl hover:bg-emerald-100 transition text-[9px] font-black uppercase tracking-widest">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                                        <span>Reactivate</span>
+                                    </button>
+                                </form>
+                                {% endif %}
+
+                                <!-- Complete Session (students & interns only) -->
+                                {% if user.role in ['student', 'intern'] and user.profile.workshop_status != 'Completed' %}
+                                <a href="{{ url_for('admin.complete_role', user_id=user.id) }}"
+                                   onclick="return confirm('Mark as completed? This will disable login access.')"
+                                   class="inline-flex items-center space-x-1 px-2.5 py-1.5 bg-purple-50 text-purple-700 border border-purple-100 rounded-xl hover:bg-purple-100 transition text-[9px] font-black uppercase tracking-widest">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                    <span>Complete</span>
+                                </a>
+                                {% elif user.role in ['student', 'intern'] and user.profile.workshop_status == 'Completed' %}
+                                <span class="inline-flex items-center space-x-1 px-2.5 py-1.5 bg-slate-100 text-slate-500 border border-slate-200 rounded-xl text-[9px] font-black uppercase tracking-widest cursor-default">
+                                    <svg class="w-3 h-3 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
+                                    <span>Completed</span>
+                                </span>
+                                {% endif %}
+
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="px-5 py-12 text-center">
+                            <div class="flex flex-col items-center justify-center space-y-4">
+                                <div class="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300">
+                                    <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                                </div>
+                                <p class="text-slate-400 font-bold">No {{ (title or 'Staff').lower() }} found in the records.</p>
+                                {% if add_endpoint %}
+                                <a href="{{ url_for(add_endpoint) }}" class="text-orange-500 hover:text-orange-600 font-black text-xs uppercase tracking-widest">Onboard New {{ (title or 'Member') }}</a>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+<script nonce="{{ csp_nonce() }}">
+document.addEventListener('DOMContentLoaded', () => {
+    const modal = document.getElementById('bypass-modal');
+    const modalBackdrop = document.getElementById('bypass-modal-backdrop');
+    const cancelBtn = document.getElementById('bypass-modal-cancel');
+    const userNameEl = document.getElementById('bypass-user-name');
+    const currentStatusEl = document.getElementById('bypass-current-status');
+    const revokeBtn = document.getElementById('revoke-bypass-btn');
+    const triggerButtons = document.querySelectorAll('.open-bypass-modal-btn');
+    const optionButtons = document.querySelectorAll('.bypass-option-btn');
+
+    let selectedUserId = null;
+    let selectedUserName = '';
+    let currentTriggerBtn = null;
+    let selectedBypassActive = false;
+
+    const closeModal = () => {
+        modal.classList.add('hidden');
+    };
+
+    const updateTriggerButtonState = (targetBtn, { active, unlimited = false, expires = '' }) => {
+        targetBtn.dataset.bypassActive = active ? 'true' : 'false';
+        targetBtn.dataset.bypassUnlimited = unlimited ? 'true' : 'false';
+        targetBtn.dataset.bypassExpires = expires || '';
+
+        if (active) {
+            targetBtn.className = 'open-bypass-modal-btn inline-flex items-center justify-center w-7 h-7 border rounded-xl transition bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100';
+            targetBtn.title = unlimited ? 'Bypass Active (Unlimited)' : `Bypass Active (Expires ${expires || 'soon'})`;
+        } else {
+            targetBtn.className = 'open-bypass-modal-btn inline-flex items-center justify-center w-7 h-7 border rounded-xl transition bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-100';
+            targetBtn.title = 'Grant Location Bypass';
+        }
+
+        targetBtn.innerHTML = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>`;
+        targetBtn.disabled = false;
+    };
+
+    const openModal = (userId, userName, btn) => {
+        selectedUserId = userId;
+        selectedUserName = userName || 'this user';
+        currentTriggerBtn = btn;
+        selectedBypassActive = btn.dataset.bypassActive === 'true';
+
+        userNameEl.textContent = selectedUserName;
+
+        if (selectedBypassActive) {
+            const isUnlimited = btn.dataset.bypassUnlimited === 'true';
+            const expires = btn.dataset.bypassExpires;
+
+            currentStatusEl.classList.remove('hidden');
+            currentStatusEl.className = 'mb-4 rounded-2xl border px-4 py-3 text-sm font-semibold bg-emerald-50 text-emerald-700 border-emerald-200';
+            currentStatusEl.textContent = isUnlimited
+                ? 'Bypass is currently active without expiration.'
+                : `Bypass is currently active until ${expires}. Choose a new duration to extend it, or revoke it below.`;
+
+            revokeBtn.classList.remove('hidden');
+        } else {
+            currentStatusEl.classList.remove('hidden');
+            currentStatusEl.className = 'mb-4 rounded-2xl border px-4 py-3 text-sm font-semibold bg-amber-50 text-amber-700 border-amber-200';
+            currentStatusEl.textContent = 'No active bypass. Choose a duration below to grant access.';
+            revokeBtn.classList.add('hidden');
+        }
+
+        modal.classList.remove('hidden');
+    };
+
+    triggerButtons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+            openModal(btn.dataset.bypassUserId, btn.dataset.bypassUserName, btn);
+        });
+    });
+
+    modalBackdrop.addEventListener('click', closeModal);
+    cancelBtn.addEventListener('click', closeModal);
+
+    optionButtons.forEach((btn) => {
+        btn.addEventListener('click', async () => {
+            if (!selectedUserId || !currentTriggerBtn) return;
+
+            const hours = Number(btn.dataset.bypassHours);
+            const targetBtn = currentTriggerBtn;
+            const originalContent = targetBtn.innerHTML;
+
+            closeModal();
+            targetBtn.disabled = true;
+            targetBtn.innerHTML = `<svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>`;
+
+            try {
+                const response = await fetch('/admin/grant-location-bypass', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token() }}'
+                    },
+                    body: JSON.stringify({
+                        user_id: selectedUserId,
+                        hours: hours
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    throw new Error(data.message || 'Operation failed on server.');
+                }
+
+                if (window.showToast) {
+                    window.showToast(data.message, 'success');
+                }
+
+                let expiresText = '';
+                if (hours !== -1) {
+                    const expiryDate = new Date(Date.now() + (hours * 60 * 60 * 1000));
+                    expiresText = expiryDate.toLocaleString();
+                }
+
+                updateTriggerButtonState(targetBtn, {
+                    active: true,
+                    unlimited: hours === -1,
+                    expires: expiresText
+                });
+            } catch (err) {
+                console.error('Bypass Error:', err);
+                targetBtn.innerHTML = originalContent;
+                targetBtn.disabled = false;
+
+                if (window.showToast) {
+                    window.showToast(err.message || 'Could not connect to server.', 'error');
+                } else {
+                    alert('Error: ' + (err.message || 'Failed to grant bypass.'));
+                }
+            }
+        });
+    });
+
+    revokeBtn.addEventListener('click', async () => {
+        if (!selectedUserId || !currentTriggerBtn) return;
+
+        const targetBtn = currentTriggerBtn;
+        const originalContent = targetBtn.innerHTML;
+
+        closeModal();
+        targetBtn.disabled = true;
+        targetBtn.innerHTML = `<svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>`;
+
+        try {
+            const response = await fetch('/admin/revoke-location-bypass', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token() }}'
+                },
+                body: JSON.stringify({
+                    user_id: selectedUserId
+                })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok || !data.success) {
+                throw new Error(data.message || 'Operation failed on server.');
+            }
+
+            updateTriggerButtonState(targetBtn, {
+                active: false,
+                unlimited: false,
+                expires: ''
+            });
+
+            if (window.showToast) {
+                window.showToast(data.message, 'success');
+            }
+        } catch (err) {
+            console.error('Bypass Revoke Error:', err);
+            targetBtn.innerHTML = originalContent;
+            targetBtn.disabled = false;
+
+            if (window.showToast) {
+                window.showToast(err.message || 'Could not connect to server.', 'error');
+            } else {
+                alert('Error: ' + (err.message || 'Failed to revoke bypass.'));
+            }
+        }
+    });
+});
+</script>
+{% endblock %}

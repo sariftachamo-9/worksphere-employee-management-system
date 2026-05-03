@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+
+{% block admin_title %}Payroll Batch: {{ month_str }}{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Batch Summary Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+            <p class="text-xs font-bold text-slate-500 uppercase tracking-widest">Total Monthly Payout</p>
+            <p id="totalPayouts" class="mt-3 text-3xl font-bold text-emerald-600">Rs. {{ "{:,.2f}".format(total_net_salary or 0) }}</p>
+            <p class="text-xs text-slate-400 mt-1">Sum of all employee & intern net salaries</p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+            <p class="text-xs font-bold text-slate-500 uppercase tracking-widest">Last Analytics Refresh</p>
+            <p id="lastRefreshed" class="mt-3 text-sm font-semibold text-slate-700">{{ last_refreshed }}</p>
+        </div>
+    </div>
+
+    <!-- Header with Search -->
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div class="flex items-center space-x-4">
+            <a href="{{ url_for('admin.payroll') }}" class="w-10 h-10 bg-white border border-slate-200 rounded-xl flex items-center justify-center text-slate-400 hover:text-orange-600 hover:border-orange-200 transition shadow-sm">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+            </a>
+            <div>
+                <h3 class="text-xl font-extrabold text-slate-800">Payroll Manage: <span class="text-orange-600">{{ month_str }}</span></h3>
+                <p class="text-[11px] text-slate-400 font-black uppercase tracking-widest mt-0.5">Monthly payroll with annual base fee converted to monthly values</p>
+            </div>
+        </div>
+
+        <form method="GET" class="relative group w-full md:w-72">
+            <input type="text" name="search" value="{{ curr_search }}" placeholder="Search staff in this batch..." 
+                class="w-full bg-white border border-slate-200 rounded-2xl px-12 py-3.5 text-sm font-bold text-slate-900 focus:ring-4 focus:ring-orange-50 focus:border-orange-400 transition shadow-sm">
+            <svg class="w-5 h-5 text-slate-300 absolute left-4 top-1/2 -translate-y-1/2 group-focus-within:text-orange-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+        </form>
+    </div>
+
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div class="text-[11px] text-slate-400 font-bold uppercase tracking-widest">
+            Batch refresh runs automatically on load.
+        </div>
+        <button id="recalculateBtn" type="button" class="inline-flex items-center px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-[10px] font-black uppercase tracking-widest transition" data-year="{{ year }}" data-month="{{ month }}" data-csrf="{{ csrf_token() }}">
+            Recalculate Payroll
+        </button>
+    </div>
+    {% if batch_status == 'Ongoing' %}
+    <div class="bg-blue-50 border border-blue-100 px-6 py-3 rounded-2xl flex items-center space-x-3">
+        <div class="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+        <span class="text-sm font-bold text-blue-600 uppercase tracking-widest">Status: Ongoing</span>
+    </div>
+    {% elif batch_status == 'Paid' %}
+    <div class="bg-emerald-50 border border-emerald-100 px-6 py-3 rounded-2xl flex items-center space-x-3">
+        <div class="w-2 h-2 bg-emerald-500 rounded-full"></div>
+        <span class="text-sm font-bold text-emerald-600 uppercase tracking-widest">Status: Paid</span>
+    </div>
+    {% else %}
+    <div class="bg-amber-50 border border-amber-100 px-6 py-3 rounded-2xl flex items-center space-x-3">
+        <div class="w-2 h-2 bg-amber-500 rounded-full"></div>
+        <span class="text-sm font-bold text-amber-600 uppercase tracking-widest">Status: Unpaid</span>
+    </div>
+    {% endif %}
+
+    {% macro payroll_table(title, items) %}
+    <div class="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
+        <div class="px-8 py-5 border-b border-slate-100 flex items-center justify-between">
+            <h4 class="text-sm font-black uppercase tracking-widest text-slate-500">{{ title }}</h4>
+            <span class="text-[10px] font-black uppercase tracking-widest text-slate-400">{{ items|length }} records</span>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left">
+                <thead>
+                    <tr class="bg-slate-50/50 border-b border-slate-100">
+                        <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Staff Access ID Number</th>
+                        <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Annual Base Fee / Monthly Value</th>
+                        <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Paid Details</th>
+                        <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Monthly / Paid Details</th>
+                        <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</th>
+                        <th class="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Action</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    {% for pr in items %}
+                    <tr class="hover:bg-slate-50/30 transition">
+                        <td class="px-8 py-6">
+                            <div class="flex items-center space-x-4">
+                                <div class="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-500 font-black text-xs">
+                                    {{ loop.index }}
+                                </div>
+                                <div>
+                                    <p class="text-sm font-black text-slate-800">{{ pr.user.profile.full_name }}</p>
+                                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{{ pr.user.role|upper }} • {{ pr.user.profile.employee_id }}</p>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-8 py-6">
+                            <div>
+                                <span class="text-sm font-bold text-slate-700">Annual: {{ 'Stipend' if pr.user.role == 'intern' else 'Rs.' }}{{ "{:,.2f}".format(pr.snapshot_base_salary or 0) }}</span>
+                                {% if pr.monthly_allocation is not none %}
+                                <p class="text-[11px] text-slate-400 font-medium mt-1">Monthly: Rs.{{ "{:,.2f}".format(pr.monthly_allocation) }}</p>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td class="px-8 py-6">
+                            <div class="space-y-1">
+                                <p class="text-[10px] text-slate-500 font-medium">{{ 'Paid:' if pr.user.role == 'student' else 'HRA:' }} Rs.{{ "{:,.0f}".format(pr.snapshot_hra or 0) }}</p>
+                                <p class="text-[10px] text-slate-500 font-medium">{{ 'Other:' if pr.user.role == 'student' else 'Auto:' }} Rs.{{ "{:,.0f}".format(pr.snapshot_transport or 0) }}</p>
+                            </div>
+                        </td>
+                        <td class="px-8 py-6">
+                            <div class="space-y-1">
+                                <!-- Monthly/Paid Details - Always show labels -->
+                                <p class="text-[11px] text-slate-500 font-medium">Absent Days: {{ '' if (pr.absent_days or 0) == 0 else (pr.absent_days|int) }}</p>
+                                {% if pr.leave_days and pr.leave_days > 0 %}
+                                <p class="text-[11px] text-sky-500 font-medium">Leave Days: {{ (pr.leave_days|int) }}</p>
+                                {% endif %}
+                                <p class="text-[11px] text-slate-500 font-medium">Per day deduction: {% if pr.daily_rate %}Rs.{{ "{:,.2f}".format(pr.daily_rate) }}{% endif %}</p>
+                                {% set absent_ded = pr.absent_deduction if pr.absent_deduction else (pr.absent_days or 0) * (pr.daily_rate or 0) %}
+                                {% set leave_ded = pr.leave_deduction if pr.leave_deduction else (pr.leave_days or 0) * (pr.daily_rate or 0) %}
+                                {% set total_deduction = absent_ded + leave_ded %}
+                                <p class="text-[11px] text-rose-500 font-medium">Absent Deduction: Rs.{{ "{:,.2f}".format(absent_ded or 0) }}</p>
+                                {% if leave_ded and leave_ded > 0 %}
+                                <p class="text-[11px] text-rose-500 font-medium">Leave Deduction: Rs.{{ "{:,.2f}".format(leave_ded or 0) }}</p>
+                                {% endif %}
+                                <p class="text-[11px] text-rose-600 font-bold">Total Deduction: Rs.{{ "{:,.2f}".format(total_deduction or pr.display_deductions or 0) }}</p>
+                                <p class="text-[11px] text-emerald-600 font-bold">Monthly Net Salary: Rs.{{ "{:,.2f}".format(pr.display_net_pay or pr.net_pay or 0) }}</p>
+                                <p class="text-[11px] text-blue-500 font-medium">OT: Rs.{{ "{:,.2f}".format(pr.display_overtime_earnings or pr.overtime_earnings or 0) }}</p>
+                            </div>
+                        </td>
+                        <td class="px-8 py-6 whitespace-nowrap">
+                            <div class="flex flex-col gap-1">
+                                {% if pr.payment_status == 'Paid' and pr.paid_date %}
+                                    <span class="inline-flex items-center px-2 py-1 text-[9px] font-black uppercase tracking-widest bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full">
+                                        ✓ Paid
+                                    </span>
+                                    <p class="text-[8px] text-emerald-600 font-medium">{{ pr.paid_date.strftime('%b %d') }}</p>
+                                {% else %}
+                                    <span class="inline-flex items-center px-2 py-1 text-[9px] font-black uppercase tracking-widest bg-amber-100 text-amber-700 border border-amber-200 rounded-full">
+                                        Unpaid
+                                    </span>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td class="px-8 py-6 space-y-2">
+                            <a href="{{ url_for('admin.view_payslip', payroll_id=pr.id) }}" class="inline-block bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition">
+                                Payslip
+                            </a>
+                            {% if pr.payment_status != 'Paid' %}
+                            <form method="post" action="{{ url_for('admin.toggle_payroll_status', payroll_id=pr.id) }}" class="inline-block">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                                <button type="submit" class="inline-flex items-center px-3 py-1.5 rounded-full bg-amber-500 text-white text-[10px] font-black uppercase tracking-widest hover:bg-amber-600 transition">
+                                    Mark Paid
+                                </button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endmacro %}
+
+    <div class="space-y-6">
+        <div>
+            <div class="mb-3 flex items-center justify-between">
+                <h4 class="text-lg font-extrabold text-slate-800">Employees</h4>
+            </div>
+            {{ payroll_table('Employee Payroll', employee_payrolls) }}
+        </div>
+
+        <div>
+            <div class="mb-3 flex items-center justify-between">
+                <h4 class="text-lg font-extrabold text-slate-800">Interns</h4>
+            </div>
+            {{ payroll_table('Intern Payroll', intern_payrolls) }}
+        </div>
+    </div>
+</div>
+
+<script nonce="{{ csp_nonce() }}">
+    document.getElementById('recalculateBtn').addEventListener('click', async function() {
+        const btn = this;
+        const originalText = btn.textContent;
+        const year = btn.dataset.year;
+        const month = btn.dataset.month;
+        const csrf = btn.dataset.csrf;
+        
+        // Show loading state
+        btn.disabled = true;
+        btn.textContent = 'Processing...';
+        btn.classList.add('opacity-50');
+        
+        try {
+            const formData = new FormData();
+            formData.append('csrf_token', csrf);
+            formData.append('year', year);
+            formData.append('month', month);
+            
+            const response = await fetch('{{ url_for("admin.payroll_manage_recalculate") }}', {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (response.ok) {
+                // Show success message and refresh payroll data
+                btn.textContent = '✓ Recalculated!';
+                btn.classList.add('bg-emerald-600', 'hover:bg-emerald-500');
+                btn.classList.remove('bg-orange-600', 'hover:bg-orange-500');
+                
+                // Reload page to show updated payroll data
+                setTimeout(() => {
+                    location.reload();
+                }, 800);
+            } else {
+                alert('Failed to recalculate payroll. Please try again.');
+                btn.disabled = false;
+                btn.textContent = originalText;
+                btn.classList.remove('opacity-50');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error recalculating payroll.');
+            btn.disabled = false;
+            btn.textContent = originalText;
+            btn.classList.remove('opacity-50');
+        }
+    });
+</script>
+{% endblock %}

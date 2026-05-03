@@ -1,0 +1,581 @@
+{% extends "base.html" %}
+
+{% block admin_title %}Payroll Management{% endblock %}
+
+{% block content %}
+<!-- Include Chart.js -->
+<script nonce="{{ csp_nonce() }}" src="{{ url_for('static', filename='js/vendor/chart.min.js') }}"></script>
+
+    <div class="space-y-6">
+        <!-- Generate Payroll and Automation Section - Combined at Top -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+            <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+                <!-- Left: Generate Payroll Form -->
+                <div class="flex-1">
+                    <h3 class="text-lg font-bold text-slate-800 mb-4">Generate Monthly / View Yearly Payroll</h3>
+                    <form action="{{ url_for('admin.generate_payroll') }}" method="POST" class="flex flex-col lg:flex-row items-start lg:items-end gap-4">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                        <div class="w-full lg:w-64">
+                            <label for="month" class="block text-xs font-semibold text-slate-500 mb-2">Select Month to Generate</label>
+                            <input type="month" id="month" name="month" class="w-full text-sm border-0 border-b-2 border-slate-200 focus:ring-0 focus:border-orange-500 bg-transparent px-0 py-2 text-slate-700 placeholder-slate-400 font-medium transition" required>
+                        </div>
+                        <div>
+                            <button type="submit" class="bg-[#e95a12] text-white px-6 py-2.5 rounded-lg font-bold text-sm hover:bg-orange-700 transition shadow-sm">
+                                Generate Payroll
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                <!-- Right: Analytics Filter -->
+                <div class="flex-1 border-t lg:border-t-0 lg:border-l border-slate-100 pt-6 lg:pt-0 lg:pl-6">
+                    <h3 class="text-lg font-bold text-slate-800 mb-4">Financial Analytics Filter</h3>
+                    <div class="flex flex-col sm:flex-row items-end gap-4">
+                        <div class="w-full sm:w-1/2">
+                            <label for="filterYear" class="block text-xs font-semibold text-slate-500 mb-2">Year</label>
+                            <select id="filterYear" class="w-full text-sm border-0 border-b-2 border-slate-200 focus:ring-0 focus:border-blue-500 bg-transparent px-0 py-2 text-slate-700 font-medium transition">
+                                <option value="2026">2026</option>
+                                <option value="2025">2025</option>
+                                <option value="2024">2024</option>
+                                <option value="2023">2023</option>
+                            </select>
+                        </div>
+                        <div class="w-full sm:w-1/2">
+                            <label for="filterMonth" class="block text-xs font-semibold text-slate-500 mb-2">Month</label>
+                            <select id="filterMonth" class="w-full text-sm border-0 border-b-2 border-slate-200 focus:ring-0 focus:border-blue-500 bg-transparent px-0 py-2 text-slate-700 font-medium transition">
+                                <option value="all">Whole Year (Yearly)</option>
+                                <option value="1">January</option>
+                                <option value="2">February</option>
+                                <option value="3">March</option>
+                                <option value="4">April</option>
+                                <option value="5">May</option>
+                                <option value="6">June</option>
+                                <option value="7">July</option>
+                                <option value="8">August</option>
+                                <option value="9">September</option>
+                                <option value="10">October</option>
+                                <option value="11">November</option>
+                                <option value="12">December</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Financial Metrics Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Student Revenue -->
+        <div class="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl shadow-sm border border-emerald-200 p-6">
+            <div class="flex items-center mb-3">
+                <div class="w-10 h-10 bg-emerald-500 rounded-lg flex items-center justify-center mr-3">
+                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                </div>
+                <span class="text-xs font-bold text-emerald-600 uppercase tracking-wider">Student Revenue</span>
+            </div>
+            <h4 class="text-2xl font-black text-emerald-800" id="studentRevenue">Rs. 0.00</h4>
+            <p class="text-xs text-emerald-600 font-medium mt-1">Fee collections</p>
+        </div>
+
+        <!-- Salary Expenses -->
+        <div class="bg-gradient-to-br from-red-50 to-red-100 rounded-xl shadow-sm border border-red-200 p-6">
+            <div class="flex items-center mb-3">
+                <div class="w-10 h-10 bg-red-500 rounded-lg flex items-center justify-center mr-3">
+                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                    </svg>
+                </div>
+                <span class="text-xs font-bold text-red-600 uppercase tracking-wider">Salary Expenses</span>
+            </div>
+            <h4 class="text-2xl font-black text-red-800" id="salaryExpenses">Rs. 0.00</h4>
+            <p class="text-xs text-red-600 font-medium mt-1">Payroll costs</p>
+        </div>
+
+        <!-- Net Profit/Loss -->
+        <div class="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl shadow-sm border border-blue-200 p-6">
+            <div class="flex items-center justify-between mb-3">
+                <div class="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
+                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+                    </svg>
+                </div>
+                <span class="text-xs font-bold text-blue-600 uppercase tracking-wider">Net Profit/Loss</span>
+            </div>
+            <h4 class="text-2xl font-black text-blue-800" id="netProfit">Rs. 0.00</h4>
+            <p class="text-xs text-blue-600 font-medium mt-1" id="profitStatus">Status</p>
+        </div>
+
+        <!-- Profit Margin -->
+        <div class="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl shadow-sm border border-purple-200 p-6">
+            <div class="flex items-center justify-between mb-3">
+                <div class="w-10 h-10 bg-purple-500 rounded-lg flex items-center justify-center">
+                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+                    </svg>
+                </div>
+                <span class="text-xs font-bold text-purple-600 uppercase tracking-wider">Profit Margin</span>
+            </div>
+            <h4 class="text-2xl font-black text-purple-800" id="profitMargin">0.00%</h4>
+            <p class="text-xs text-purple-600 font-medium mt-1">Margin %</p>
+        </div>
+    </div>
+
+    <!-- Charts Toggle Button -->
+    <div class="flex items-center justify-between mt-8 mb-6">
+        <h3 class="text-lg font-bold text-slate-800">Financial Analytics</h3>
+        <button id="toggleChartsBtn" type="button" class="inline-flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg font-bold text-sm transition-all shadow-sm">
+            <svg id="toggleIcon" class="w-4 h-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path>
+            </svg>
+            <span id="toggleText">Show All Graphs</span>
+        </button>
+    </div>
+
+    <!-- Charts Grid (5 Charts) - Hidden by default -->
+    <div id="chartsContainer" class="hidden transition-all duration-300">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <!-- 1. Salary vs Income Trend (Line Chart) -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+                <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-6">Salary vs Income</h3>
+                <div class="relative h-64 w-full">
+                    <canvas id="trendChart"></canvas>
+                </div>
+            </div>
+
+            <!-- 2. Distribution (Employees + Interns vs Students - Doughnut) -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+                <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-6">Distribution (Employees + Interns vs Students)</h3>
+                <div class="relative h-64 w-full flex items-center justify-center">
+                    <canvas id="distributionChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Additional Financial Charts -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <!-- 3. Revenue Trend -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+            <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-6">Revenue Trend</h3>
+            <div class="relative h-48 w-full">
+                <canvas id="revenueChart"></canvas>
+            </div>
+        </div>
+
+        <!-- 4. Expense Trend -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+            <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-6">Expense Trend</h3>
+            <div class="relative h-48 w-full">
+                <canvas id="expenseChart"></canvas>
+            </div>
+        </div>
+
+        <!-- 5. Profit/Loss Trend -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+            <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-6">Profit/Loss Trend</h3>
+            <div class="relative h-48 w-full">
+                <canvas id="profitChart"></canvas>
+            </div>
+        </div>
+    </div>
+    </div>
+
+    <!-- Payroll History List -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+        <div class="p-6 border-b border-slate-50">
+            <h3 class="text-base font-bold text-slate-800">Payroll History</h3>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left">
+                <thead>
+                    <tr class="bg-white border-b border-slate-100">
+                        <th class="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Month</th>
+                        <th class="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Employees</th>
+                        <th class="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Total Monthly Payout</th>
+                        <th class="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
+                        <th class="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-50">
+                    {% for p in history_data %}
+                    <tr class="hover:bg-slate-50/50 transition bg-white">
+                        <td class="px-6 py-5 text-sm font-bold text-slate-900">{{ p.month_str }}</td>
+                        <td class="px-6 py-5 text-sm text-slate-500">{{ p.employees }}</td>
+                        <td class="px-6 py-5 text-sm font-bold text-emerald-500">Rs. {{ "{:,.2f}".format(p.total_salary) }}</td>
+                        <td class="px-6 py-5">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-800 border border-slate-200 shadow-sm">
+                                {{ p.status }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-5">
+                            <a href="/admin/payroll/batch/{{ p.year }}/{{ p.month }}" class="text-sm font-bold text-orange-600 hover:text-orange-800">Manage</a>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="px-6 py-8 text-center text-slate-500 text-sm">No payroll history found. Generate a batch to begin.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script nonce="{{ csp_nonce() }}">
+    document.addEventListener("DOMContentLoaded", function() {
+        // Toggle Charts Visibility
+        const toggleBtn = document.getElementById('toggleChartsBtn');
+        const chartsContainer = document.getElementById('chartsContainer');
+        const toggleText = document.getElementById('toggleText');
+        const toggleIcon = document.getElementById('toggleIcon');
+        let chartsVisible = false;
+
+        if (toggleBtn && chartsContainer) {
+            toggleBtn.addEventListener('click', function() {
+                chartsVisible = !chartsVisible;
+                
+                if (chartsVisible) {
+                    chartsContainer.classList.remove('hidden');
+                    toggleText.textContent = 'Hide All Graphs';
+                    toggleIcon.style.transform = 'rotate(180deg)';
+                    toggleBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+                    toggleBtn.classList.add('bg-red-600', 'hover:bg-red-700');
+                    
+                    // Trigger chart resize to render properly
+                    setTimeout(() => {
+                        if (trendChart) trendChart.resize();
+                        if (distributionChart) distributionChart.resize();
+                        if (revenueChart) revenueChart?.resize();
+                        if (expenseChart) expenseChart?.resize();
+                        if (profitChart) profitChart?.resize();
+                    }, 100);
+                } else {
+                    chartsContainer.classList.add('hidden');
+                    toggleText.textContent = 'Show All Graphs';
+                    toggleIcon.style.transform = 'rotate(0deg)';
+                    toggleBtn.classList.remove('bg-red-600', 'hover:bg-red-700');
+                    toggleBtn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+                }
+            });
+        }
+
+        const palette = ['#5b5fc0', '#0fb981', '#f59e0b', '#ef4444', '#8b5cf6', '#14b8a6'];
+
+        const trendCtx = document.getElementById('trendChart').getContext('2d');
+        const distributionCtx = document.getElementById('distributionChart').getContext('2d');
+        const distributionChart = new Chart(distributionCtx, {
+            type: 'doughnut', // Switched to Doughnut for a more modern look
+            data: {
+                labels: {{ distribution_labels | tojson }},
+                datasets: [{
+                    data: [],
+                    backgroundColor: ['#e95a12', '#0fb981', '#3b82f6'], // Brand Orange for Employees, Emerald for Interns, Blue for Students
+                    hoverBackgroundColor: ['#c1490d', '#059669', '#2563eb'],
+                    borderWidth: 0,
+                    hoverOffset: 12
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '75%',
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            usePointStyle: true,
+                            padding: 20,
+                            font: { size: 11, family: "'Inter', sans-serif", weight: '600' },
+                            color: '#475569'
+                        }
+                    }
+                }
+            }
+        });
+
+        const trendChart = new Chart(trendCtx, {
+            type: 'line',
+            data: {
+                labels: {{ trend_labels | tojson }},
+                datasets: [{
+                    label: 'Salary Expenses',
+                    data: [],
+                    borderColor: '#ef4444',
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    borderWidth: 2,
+                    pointBackgroundColor: '#ef4444',
+                    pointBorderColor: '#ffffff',
+                    pointBorderWidth: 2,
+                    pointRadius: 4,
+                    fill: true,
+                    tension: 0.3
+                }, {
+                    label: 'Student Income',
+                    data: [],
+                    borderColor: '#10b981',
+                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                    borderWidth: 2,
+                    pointBackgroundColor: '#10b981',
+                    pointBorderColor: '#ffffff',
+                    pointBorderWidth: 2,
+                    pointRadius: 4,
+                    fill: true,
+                    tension: 0.3
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            label: function(context) {
+                                return ' Rs. ' + context.parsed.y.toLocaleString(undefined, {minimumFractionDigits: 2});
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { display: false, drawBorder: false },
+                        ticks: { font: { size: 10, family: "'Inter', sans-serif" }, color: '#94a3b8' }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: '#f1f5f9', drawBorder: false },
+                        ticks: { font: { size: 10, family: "'Inter', sans-serif" }, color: '#94a3b8' }
+                    }
+                }
+            }
+        });
+
+        // Revenue Trend Chart
+        const revenueCtx = document.getElementById('revenueChart')?.getContext('2d');
+        let revenueChart;
+        if (revenueCtx) {
+            revenueChart = new Chart(revenueCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Student Revenue',
+                        data: [],
+                        borderColor: '#10b981',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        borderWidth: 2,
+                        pointBackgroundColor: '#10b981',
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { grid: { display: false } },
+                        y: { beginAtZero: true, grid: { color: '#f1f5f9' } }
+                    }
+                }
+            });
+        }
+
+        // Expense Trend Chart
+        const expenseCtx = document.getElementById('expenseChart')?.getContext('2d');
+        let expenseChart;
+        if (expenseCtx) {
+            expenseChart = new Chart(expenseCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Salary Expenses',
+                        data: [],
+                        borderColor: '#ef4444',
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                        borderWidth: 2,
+                        pointBackgroundColor: '#ef4444',
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { grid: { display: false } },
+                        y: { beginAtZero: true, grid: { color: '#f1f5f9' } }
+                    }
+                }
+            });
+        }
+
+        // Profit/Loss Trend Chart
+        const profitCtx = document.getElementById('profitChart')?.getContext('2d');
+        let profitChart;
+        if (profitCtx) {
+            profitChart = new Chart(profitCtx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Net Profit/Loss',
+                        data: [],
+                        backgroundColor: [],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: '#f1f5f9' } }
+                    }
+                }
+            });
+        }
+
+        function updateHistoryTable(historyData) {
+            const tbody = document.querySelector('tbody.divide-y');
+            if (!tbody) return;
+
+            if (!historyData.length) {
+                tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-8 text-center text-slate-500 text-sm">No payroll history found. Generate a batch to begin.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = historyData.map((p) => `
+                <tr class="hover:bg-slate-50/50 transition bg-white">
+                    <td class="px-6 py-5 text-sm font-bold text-slate-900">${p.month_str}</td>
+                    <td class="px-6 py-5 text-sm text-slate-500">${p.employees}</td>
+                    <td class="px-6 py-5 text-sm font-bold text-emerald-500">Rs. ${Number(p.total_salary || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                    <td class="px-6 py-5">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-800 border border-slate-200 shadow-sm">
+                            ${p.status}
+                        </span>
+                    </td>
+                    <td class="px-6 py-5">
+                        <a href="/admin/payroll/batch/${p.year}/${p.month}" class="text-sm font-bold text-orange-600 hover:text-orange-800">Manage</a>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function refreshPayrollAnalytics() {
+            try {
+                // Get filter values
+                const filterYear = document.getElementById('filterYear')?.value || '';
+                const filterMonth = document.getElementById('filterMonth')?.value || '';
+                let queryStr = '';
+                if (filterYear) {
+                    queryStr = `?year=${filterYear}&month=${filterMonth}`;
+                }
+                
+                const response = await fetch("{{ url_for('admin.payroll_analytics') }}" + queryStr, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
+                if (!response.ok) return;
+
+                const data = await response.json();
+                
+                // Update trend chart (Salary vs Income)
+                if (data.financial?.expense_trend && data.financial?.revenue_trend) {
+                    trendChart.data.labels = data.financial.expense_trend.map(e => e.period);
+                    trendChart.data.datasets[0].data = data.financial.expense_trend.map(e => e.amount);
+                    trendChart.data.datasets[1].data = data.financial.revenue_trend.map(r => r.amount);
+                    trendChart.options.plugins.legend.display = true; // Show legend so they know which line is which
+                    trendChart.update();
+                }
+
+                // Update distribution chart (Employees + Interns vs Students)
+                let distLabels = [...data.distribution_labels];
+                let distData = [...data.distribution_data];
+                
+                // Add student revenue to distribution if valid
+                const studentRev = data.financial?.current_month?.revenue || 0;
+                if (studentRev > 0 || distData.length === 0) {
+                    distLabels.push('Student (Revenue)');
+                    distData.push(studentRev);
+                }
+                
+                distributionChart.data.labels = distLabels;
+                distributionChart.data.datasets[0].data = distData;
+                distributionChart.update();
+
+                // Update financial metrics
+                const formatCurrency = (val) => 'Rs. ' + Number(val || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                
+                const currentRevenue = data.financial?.revenue || 0;
+                const currentExpenses = data.financial?.expenses || 0;
+                const netProfit = currentRevenue - currentExpenses;
+                const profitMargin = currentRevenue > 0 ? (netProfit / currentRevenue * 100) : 0;
+                
+                document.getElementById('studentRevenue').textContent = formatCurrency(currentRevenue);
+                document.getElementById('salaryExpenses').textContent = formatCurrency(currentExpenses);
+                document.getElementById('netProfit').textContent = formatCurrency(Math.abs(netProfit));
+                document.getElementById('profitStatus').textContent = netProfit >= 0 ? 'Profit' : 'Loss';
+                document.getElementById('netProfit').className = netProfit >= 0 ? 'text-2xl font-black text-blue-800' : 'text-2xl font-black text-red-800';
+                document.getElementById('profitMargin').textContent = Number(profitMargin).toFixed(2) + '%';
+                
+                document.getElementById('totalPayouts').textContent = formatCurrency(data.total_monthly_payouts || 0);
+                document.getElementById('lastRefreshed').textContent = data.last_refreshed;
+                updateHistoryTable(data.history_data || []);
+                
+                // Update financial charts if they exist
+                if (data.financial?.revenue_trend && revenueChart) {
+                    revenueChart.data.labels = data.financial.revenue_trend.map(r => r.period);
+                    revenueChart.data.datasets[0].data = data.financial.revenue_trend.map(r => r.amount);
+                    revenueChart.update();
+                }
+                
+                if (data.financial?.expense_trend && expenseChart) {
+                    expenseChart.data.labels = data.financial.expense_trend.map(e => e.period);
+                    expenseChart.data.datasets[0].data = data.financial.expense_trend.map(e => e.amount);
+                    expenseChart.update();
+                }
+                
+                if (data.financial?.profit_trend && profitChart) {
+                    const profitData = data.financial.profit_trend.map(p => p.amount);
+                    profitChart.data.labels = data.financial.profit_trend.map(p => p.period);
+                    profitChart.data.datasets[0].data = profitData;
+                    profitChart.data.datasets[0].backgroundColor = profitData.map(p => p >= 0 ? '#10b981' : '#ef4444');
+                    profitChart.update();
+                }
+            } catch (error) {
+                console.error('Payroll analytics refresh failed', error);
+            }
+        }
+
+        setInterval(refreshPayrollAnalytics, 30000); // Refresh every 30 seconds instead of 60
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) {
+                refreshPayrollAnalytics();
+            }
+        });
+
+        // Add event listeners for the new filter inputs
+        const filterYearDropdown = document.getElementById('filterYear');
+        const filterMonthDropdown = document.getElementById('filterMonth');
+        
+        // Set initial values to current month/year
+        if (filterYearDropdown && filterMonthDropdown) {
+            const now = new Date();
+            filterYearDropdown.value = now.getFullYear().toString();
+            filterMonthDropdown.value = (now.getMonth() + 1).toString();
+            
+            filterYearDropdown.addEventListener('change', refreshPayrollAnalytics);
+            filterMonthDropdown.addEventListener('change', refreshPayrollAnalytics);
+        }
+
+        // Also refresh when the page loads
+        refreshPayrollAnalytics();
+    });
+</script>
+{% endblock %}
