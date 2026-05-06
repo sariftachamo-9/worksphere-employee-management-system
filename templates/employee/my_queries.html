@@ -117,7 +117,7 @@
                                 <div class="flex flex-col {% if msg.sender_type == 'user' %}items-end{% else %}items-start{% endif %}">
                                     <div class="max-w-[85%] rounded-2xl p-3 {% if msg.sender_type == 'user' %}bg-orange-500 text-white rounded-tr-none{% else %}bg-white border border-slate-200 text-slate-800 rounded-tl-none{% endif %} shadow-sm">
                                         <p class="text-sm">{{ msg.message }}</p>
-                                        <p class="text-[9px] font-medium opacity-70 mt-1 text-right">{{ msg.timestamp.strftime('%b %d, %H:%M') }}</p>
+                                        <p class="text-[9px] font-medium opacity-70 mt-1 text-right">{{ msg.timestamp.strftime('%b %d, %I:%M %p') }}</p>
                                     </div>
                                 </div>
                                 {% else %}

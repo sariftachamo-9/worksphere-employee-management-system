@@ -27,7 +27,7 @@ def setup_ngawang():
             # Create user
             user = User(
                 email='ngawang.sherpa@ems.com',
-                password_hash=generate_password_hash('NgawangTest@123'),
+                password_hash=generate_password_hash('NgawangTest@123', method='pbkdf2:sha256'),
                 role='employee',
                 is_active=True
             )

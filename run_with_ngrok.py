@@ -45,13 +45,27 @@ def run_dev():
             load_dotenv() # Ensure .env is loaded so NGROK_AUTHTOKEN is available
             
             # Configure pyngrok to use the manually downloaded binary
+            # Try to find ngrok binary in virtual environment
             ngrok_bin = "ngrok.exe" if os.name == 'nt' else "ngrok"
-            # Try both .venv/bin (as seen in this workspace) and .venv/Scripts (standard Windows)
-            ngrok_path = os.path.join(".venv", "bin", ngrok_bin)
-            if not os.path.exists(ngrok_path):
-                ngrok_path = os.path.join(".venv", "Scripts", ngrok_bin)
+            
+            # Potential locations for the binary
+            potential_paths = [
+                os.path.join(".venv", "bin", ngrok_bin),
+                os.path.join(".venv", "Scripts", ngrok_bin),
+                os.path.join("..", ".venv", "bin", ngrok_bin),
+                os.path.join("..", ".venv", "Scripts", ngrok_bin)
+            ]
+            
+            ngrok_path = None
+            for path in potential_paths:
+                if os.path.exists(path):
+                    ngrok_path = path
+                    break
                 
-            pyngrok_config = conf.PyngrokConfig(ngrok_path=ngrok_path)
+            if ngrok_path:
+                pyngrok_config = conf.PyngrokConfig(ngrok_path=ngrok_path)
+            else:
+                pyngrok_config = conf.PyngrokConfig()
             
             # Open a ngrok tunnel to the dev server
             connect_kwargs = {"pyngrok_config": pyngrok_config}

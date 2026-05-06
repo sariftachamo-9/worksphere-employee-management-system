@@ -91,6 +91,7 @@ def qr_password_check(token):
             session['session_token'] = token
             
             login_user(user)
+            session['session_version'] = current_app.config.get('BOOT_ID')
             db.session.add(AuditLog(user_id=user.id, action="Admin identity verified via QR + Password", ip_address=request.remote_addr))
             db.session.commit()
             flash('Admin QR Login Successful.', 'success')
@@ -125,15 +126,17 @@ def login():
     
     if request.method == 'POST':
         print('DEBUG: Login POST handler entered')
-        # Auto-trim and normalize email/password
-        email = (request.form.get('email') or '').strip().lower()
+        # Auto-trim email/password (lookups use case-insensitive comparison)
+        email = (request.form.get('email') or '').strip()
         password = (request.form.get('password') or '').strip()
         
         # Security: Hybrid Email Domain Validation (Regex-based restoration)
         import re
         role_selected = request.form.get('role', 'admin')
         domain_pattern = r'^[a-zA-Z0-9._%+-]+@ems\.com$'
-        if not re.match(domain_pattern, email):
+        if not re.match(domain_pattern, email, re.IGNORECASE):
+             db.session.add(AuditLog(action=f"Login Rejected: Domain Restriction ({email})", ip_address=ip))
+             db.session.commit()
              flash('Security Alert: Access is restricted to official @ems.com domains.', 'danger')
              return render_template('auth/login.html', selected_role=role_selected)
         
@@ -141,8 +144,9 @@ def login():
             flash('Email is required.', 'danger')
             return render_template('auth/login.html', selected_role=request.form.get('role', 'admin'))
             
-        # Look up user by Email OR Employee ID
-        user = User.query.filter_by(email=email).first()
+        # Look up user by Email (case-insensitive) OR Employee ID
+        from sqlalchemy import func
+        user = User.query.filter(func.lower(User.email) == email.lower()).first()
         if not user:
             # Fallback search by Employee ID (case-insensitive)
             user = User.query.join(EmployeeProfile).filter(
@@ -154,54 +158,52 @@ def login():
             is_valid = check_password_hash(user.password_hash, password)
             print(f'DEBUG: Password valid? {is_valid}')
             if is_valid:
-                # SUCCESS (Phase 1): Trigger OTP Flow
-                # Note: We now ignore the raw selected_role tab and use the user's actual role
-                # This fixes the "Identity Error" friction for Students/Interns.
+                # If admin: allow single-step password-only login (no OTP)
+                # For other roles, continue with OTP flow
                 selected_role = user.role
-                
+
                 # IMPORTANT: Reset lockout attempts immediately upon correct password
                 if block:
                     db.session.delete(block)
                     db.session.commit()
-                    block = None # Clear local variable
+                    block = None
 
                 # Security: Check if account is active
                 if not user.is_active:
                     flash('Account Inactive: Please contact the administrator.', 'danger')
                     return render_template('auth/login.html', selected_role=selected_role)
 
-                print('DEBUG: About to generate OTP')
-                # SUCCESS (Phase 1): Trigger OTP Flow
+                # All users (including admins) now follow the OTP flow
                 otp = generate_otp()
-                print(f'DEBUG: OTP generated: {otp}')
                 user.otp = otp
                 user.otp_expiry = get_nepal_time() + timedelta(minutes=10)
                 db.session.add(AuditLog(user_id=user.id, action="Login Phase 1 Success (OTP Sent)", ip_address=ip))
                 db.session.commit()
-                
-                # Send OTP via email and display in console for dev
+
                 send_otp_email(user, otp)
                 otp_log = f"LOGIN FOR: {user.email} | OTP CODE: {otp}"
-                # Always print to main terminal (stdout)
                 print("\n" + "="*50)
                 print(f"║ LOGIN FOR: {user.email}")
                 print(f"║ OTP CODE:  \033[1;92m{otp}\033[0m")
                 print("="*50 + "\n")
-                # Also print OTP log in plain text for easy searching
                 print(otp_log)
-                # Log to Flask logger (shows in terminal and ems.log)
                 try:
                     current_app.logger.info(otp_log)
                 except Exception:
                     pass
-                
+
                 session['pending_user_id'] = user.id
+                session['login_location_verified'] = (request.form.get('location_verified') == 'true')
                 flash('Two-Factor Authentication: A security code has been sent to your email.', 'info')
                 return redirect(url_for('auth.verify_otp'))
             else:
+                db.session.add(AuditLog(user_id=user.id, action=f"Login Failed: Password Mismatch ({email})", ip_address=ip))
+                db.session.commit()
                 current_app.logger.warning(f"Login failed: Password mismatch for {email}")
                 flash("Invalid email or password.", "danger")
         else:
+            db.session.add(AuditLog(action=f"Login Failed: User Not Found ({email})", ip_address=ip))
+            db.session.commit()
             current_app.logger.warning(f"Login failed: User not found - {email}")
             flash("Invalid email or password.", "danger")
 
@@ -287,6 +289,12 @@ def verify_otp():
             session.pop('pending_user_id', None)
             
             db.session.add(AuditLog(user_id=user.id, action="Login", ip_address=ip))
+            
+            # GRANT 24H BYPASS if verified at login
+            if session.pop('login_location_verified', False):
+                user.location_bypass_until = get_nepal_time() + timedelta(hours=24)
+                db.session.add(AuditLog(user_id=user.id, action="24h Location Bypass Granted (Login Verified)", ip_address=ip))
+                
             db.session.commit()
             
             return redirect(url_for('admin.dashboard' if user.role == 'admin' else 'staff.dashboard'))
@@ -425,7 +433,7 @@ def reset_password():
                 flash(msg, 'danger')
                 return render_template('auth/reset_password.html')
                 
-            user.password_hash = generate_password_hash(new_password)
+            user.password_hash = generate_password_hash(new_password, method='pbkdf2:sha256')
             user.otp = None
             user.otp_expiry = None
             
@@ -446,4 +454,3 @@ def reset_password():
             flash('Error resetting password.', 'danger')
             
     return render_template('auth/reset_password.html')
-

@@ -175,13 +175,10 @@ class SchedulerService:
                 current_app.logger.error(f"Error sending checkout reminders: {e}")
 
     def _mark_absent_no_shows(self):
-        """Automatically create absent records for active users with no attendance or approved leave."""
+        """Automatically create absent or holiday records for active users with no attendance or approved leave."""
         with self.app.app_context():
             try:
                 today = get_nepal_time().date()
-                if today.weekday() == 5:  # Skip Saturdays
-                    return
-
                 start_of_day = datetime.combine(today, time.min)
                 end_of_day = datetime.combine(today, time.max)
 
@@ -206,27 +203,44 @@ class SchedulerService:
                 ).all()
 
                 absent_count = 0
+                holiday_count = 0
+
+                is_saturday = (today.weekday() == 5)
                 for user in users_to_mark:
                     if user.id in attended_user_ids or user.id in leave_user_ids:
                         continue
 
-                    absent_record = Attendance(
-                        user_id=user.id,
-                        check_in=datetime.combine(today, time(hour=12, minute=0)),
-                        status='absent'
-                    )
-                    db.session.add(absent_record)
-                    db.session.add(AuditLog(
-                        user_id=user.id,
-                        action=f"Auto-marked absent for no check-in on {today.isoformat()}",
-                        details='Daily attendance automation',
-                        ip_address='SYSTEM_SCHEDULER'
-                    ))
-                    absent_count += 1
+                    if is_saturday:
+                        holiday_record = Attendance(
+                            user_id=user.id,
+                            check_in=datetime.combine(today, time(hour=12, minute=0)),
+                            check_out=datetime.combine(today, time(hour=12, minute=0)),
+                            status='holiday',
+                            is_weekend=True
+                        )
+                        db.session.add(holiday_record)
+                        holiday_count += 1
+                    else:
+                        absent_record = Attendance(
+                            user_id=user.id,
+                            check_in=datetime.combine(today, time(hour=12, minute=0)),
+                            status='absent'
+                        )
+                        db.session.add(absent_record)
+                        db.session.add(AuditLog(
+                            user_id=user.id,
+                            action=f"Auto-marked absent for no check-in on {today.isoformat()}",
+                            details='Daily attendance automation',
+                            ip_address='SYSTEM_SCHEDULER'
+                        ))
+                        absent_count += 1
 
-                if absent_count:
+                if holiday_count or absent_count:
                     db.session.commit()
-                    current_app.logger.info(f"Marked {absent_count} users absent for {today}.")
+                    if absent_count:
+                        current_app.logger.info(f"Marked {absent_count} users absent for {today}.")
+                    if holiday_count:
+                        current_app.logger.info(f"Marked {holiday_count} users holiday for {today}.")
 
             except Exception as e:
                 current_app.logger.error(f"Error while auto-marking absent users: {e}")

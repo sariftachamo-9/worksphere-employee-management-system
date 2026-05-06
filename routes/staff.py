@@ -13,10 +13,22 @@ from utils.security_utils import validate_password_strength, validate_nepal_phon
 
 staff_bp = Blueprint('staff', __name__)
 
+from functools import wraps
+def check_lockout(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if current_user.is_authenticated and current_user.is_locked_out():
+            if request.is_json:
+                return jsonify({'success': False, 'message': 'System access locked until tomorrow.', 'locked': True}), 403
+            return redirect(url_for('staff.locked'))
+        return f(*args, **kwargs)
+    return decorated_function
+
 
 
 @staff_bp.route('/dashboard')
 @login_required
+@check_lockout
 def dashboard():
     today = get_nepal_time().date()
     
@@ -76,6 +88,7 @@ def dashboard():
 
 @staff_bp.route('/api/attendance-stats', methods=['GET'])
 @login_required
+@check_lockout
 def get_attendance_stats():
     """
     Asynchronous endpoint to fetch dashboard statistics without blocking page load.
@@ -113,10 +126,28 @@ def get_attendance_stats():
 
 @staff_bp.route('/check-in', methods=['POST'])
 @login_required
+@check_lockout
 def check_in():
     # Day-based Check-In Logic: Prevent duplicate attendance records for the same day
     from database.models import AuditLog, OfficeSettings, AllowedLocation
-    today = get_nepal_time().date()
+    from utils.time_utils import get_nepal_time
+    import pytz
+
+    def parse_client_timestamp(raw_timestamp):
+        if not raw_timestamp:
+            return None
+        try:
+            parsed_time = datetime.fromisoformat(raw_timestamp.replace('Z', '+00:00'))
+            if parsed_time.tzinfo is not None:
+                nepal_tz = pytz.timezone('Asia/Kathmandu')
+                return parsed_time.astimezone(nepal_tz).replace(tzinfo=None)
+            return parsed_time
+        except (ValueError, TypeError):
+            return None
+
+    data = request.get_json() or {}
+    now = parse_client_timestamp(data.get('client_timestamp')) or get_nepal_time()
+    today = now.date()
     
     # Check for any attendance record today (active or completed)
     existing = Attendance.query.filter_by(user_id=current_user.id).filter(
@@ -134,7 +165,6 @@ def check_in():
         return jsonify({'success': False, 'message': 'You have already checked in for today.'}), 400
 
     # GPS Location Verification
-    data = request.get_json() or {}
     lat = data.get('latitude')
     lon = data.get('longitude')
     
@@ -172,7 +202,6 @@ def check_in():
             db.session.commit()
             return jsonify({'success': False, 'message': f"Geofence Rejected: {msg}"}), 403
     
-    now = get_nepal_time()
     attendance = Attendance(user_id=current_user.id, check_in=now)
     db.session.add(attendance)
     db.session.flush() # Get attendance ID
@@ -196,6 +225,11 @@ def check_in():
     
     # Trigger Attendance Sync for current week (last 7 days and next 7 days)
     AttendanceService.sync_attendance_for_period(current_user.id, today - timedelta(days=7), today + timedelta(days=7))
+
+    try:
+        PayrollService.refresh_upcoming_payroll_for_user(current_user.id, actor_id=current_user.id, actor_ip=request.remote_addr or 'SYSTEM')
+    except Exception as e:
+        current_app.logger.warning(f"Payroll refresh failed after check-in for user {current_user.id}: {e}")
     
     db.session.commit()
     
@@ -230,6 +264,11 @@ def check_out():
     # Trigger Attendance Sync for current week
     today_dt = get_nepal_time().date()
     AttendanceService.sync_attendance_for_period(current_user.id, today_dt - timedelta(days=7), today_dt + timedelta(days=7))
+
+    try:
+        PayrollService.refresh_upcoming_payroll_for_user(current_user.id, actor_id=current_user.id, actor_ip=request.remote_addr or 'SYSTEM')
+    except Exception as e:
+        current_app.logger.warning(f"Payroll refresh failed after check-out for user {current_user.id}: {e}")
     
     db.session.commit()
     
@@ -362,7 +401,7 @@ def my_profile():
                 flash(msg, 'danger')
                 return redirect(url_for('staff.my_profile'))
 
-            current_user.password_hash = generate_password_hash(new_password)
+            current_user.password_hash = generate_password_hash(new_password, method='pbkdf2:sha256')
             current_user.otp = None
             current_user.otp_expiry = None
             db.session.add(AuditLog(
@@ -424,6 +463,9 @@ def my_queries():
         db.session.commit()
         flash('Query submitted successfully. Admin will respond soon.', 'success')
         return redirect(url_for('staff.my_queries'))
+    
+    queries = ContactQuery.query.filter_by(email=current_user.email).order_by(ContactQuery.created_at.desc()).all()
+    return render_template('employee/my_queries.html', queries=queries)
 
 @staff_bp.route('/query/reply/<int:query_id>', methods=['POST'])
 @login_required
@@ -445,8 +487,6 @@ def reply_query(query_id):
         flash('Reply sent successfully.', 'success')
         
     return redirect(url_for('staff.my_queries'))
-    queries = ContactQuery.query.filter_by(email=current_user.email).order_by(ContactQuery.created_at.desc()).all()
-    return render_template('employee/my_queries.html', queries=queries)
 
 # ─── Leaves ───────────────────────────────────────────────────────────────────
 @staff_bp.route('/leaves', methods=['GET', 'POST'])
@@ -573,29 +613,22 @@ def attendance_events():
             
         # Add Time Information to Title
         if att.check_in and att.status not in ['absent', 'holiday', 'weekend']:
-            time_str = att.check_in.strftime('%H:%M')
-            if att.check_out:
-                time_str += f" - {att.check_out.strftime('%H:%M')}"
-            else:
-                time_str += " - ..."
-            title = f"{title} ({time_str})"
-            
+            # Requirement: ONLY ONE time (Check-in) in 12-hour format
+            time_str = att.check_in.strftime('%I:%M %p')
+            title = f"{title} - {time_str}"
         event = {
             'id': f'att_{att.id}',
             'title': title,
-            'color': color,
+            'color': color
         }
         
-        if att.check_out:
-            event['start'] = att.check_in.isoformat()
-            event['end'] = att.check_out.isoformat()
-            event['allDay'] = False
-        elif att.status != 'absent' and att.status != 'weekend':
-            event['start'] = att.check_in.isoformat()
-            event['allDay'] = False
-        else: # absent / weekend fallback to all day
+        # Ensure consistent date/time format for FullCalendar
+        if att.status in ['absent', 'holiday', 'weekend']:
             event['start'] = att.check_in.strftime('%Y-%m-%d')
             event['allDay'] = True
+        else:
+            event['start'] = att.check_in.isoformat()
+            event['allDay'] = False
             
         events.append(event)
         
@@ -653,11 +686,78 @@ def view_my_payslip(payroll_id):
     PayrollService.attach_calculated_fields(payroll)
     return render_template('admin/payslip_template.html', p=payroll, month_str=month_str)
     
-if __name__ == '__main__':
-    # This allows developers to run this file directly to start the dev server
-    import sys
-    import os
-    # Add parent directory to path so we can import run_dev
-    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from run_dev import run_dev
-    run_dev()
+@staff_bp.route('/api/payroll', methods=['GET'])
+@login_required
+def get_payroll():
+    payroll = Payroll.query.filter_by(user_id=current_user.id).order_by(Payroll.generated_on.desc()).first()
+    if not payroll:
+        return jsonify({'error': 'No payroll data found'}), 404
+    
+    PayrollService.attach_calculated_fields(payroll)
+    return jsonify({
+        'id': payroll.id,
+        'month': payroll.month,
+        'year': payroll.year,
+        'base_salary': payroll.base_salary,
+        'hra': payroll.hra,
+        'conveyance': payroll.conveyance,
+        'medical': payroll.medical,
+        'lta': payroll.lta,
+        'special_allowance': payroll.special_allowance,
+        'overtime_earnings': payroll.overtime_earnings,
+        'gross_salary': payroll.gross_salary,
+        'absent_days': payroll.absent_days,
+        'absent_deduction': payroll.absent_deduction,
+        'leave_days': payroll.leave_days,
+        'leave_deduction': payroll.leave_deduction,
+        'advance_payment': payroll.advance_payment,
+        'total_deductions': payroll.total_deductions,
+        'net_salary': payroll.net_salary,
+        'generated_on': payroll.generated_on.isoformat() if payroll.generated_on else None
+    })
+
+@staff_bp.route('/locked')
+@login_required
+def locked():
+    if not current_user.is_locked_out():
+        return redirect(url_for('staff.dashboard'))
+    return render_template('auth/locked.html', lockout_until=current_user.lockout_until)
+
+@staff_bp.route('/start-overtime', methods=['POST'])
+@login_required
+@check_lockout
+def start_overtime():
+    from database.models import OvertimeRequest
+    # Find approved OT for today
+    today = get_nepal_time().date()
+    ot = OvertimeRequest.query.filter_by(user_id=current_user.id, status='approved').filter(OvertimeRequest.requested_date == today).first()
+    
+    if not ot:
+        return jsonify({'success': False, 'message': 'No approved overtime found for today.'}), 404
+    
+    ot.status = 'in-progress'
+    ot.actual_start_time = get_nepal_time()
+    db.session.commit()
+    
+    return jsonify({'success': True, 'planned_hours': ot.hours})
+
+@staff_bp.route('/finish-overtime', methods=['POST'])
+@login_required
+def finish_overtime():
+    from database.models import OvertimeRequest
+    ot = OvertimeRequest.query.filter_by(user_id=current_user.id, status='in-progress').first()
+    
+    if ot:
+        ot.status = 'completed'
+        ot.actual_end_time = get_nepal_time()
+    
+    # Set Hard Lockout until 12:01 AM tomorrow
+    tomorrow = get_nepal_time() + timedelta(days=1)
+    current_user.lockout_until = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 0, 1)
+    db.session.commit()
+    
+    # Logout session
+    from flask_login import logout_user
+    logout_user()
+    
+    return jsonify({'success': True, 'message': 'Overtime completed. System locked until tomorrow.'})

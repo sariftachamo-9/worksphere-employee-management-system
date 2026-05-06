@@ -142,6 +142,12 @@ input:-webkit-autofill:active {
     padding: 2rem;
 }
 
+@media (max-width: 768px) {
+    .staff-layout {
+        padding: 1rem;
+    }
+}
+
 /* Brand Gradient Bulbs */
 .blob {
     position: absolute;

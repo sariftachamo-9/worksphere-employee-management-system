@@ -14,90 +14,172 @@
 
     /* Skeleton Loading Animation */
     @keyframes skeleton-shimmer {
-        0% { background-position: -200% 0; }
-        100% { background-position: 200% 0; }
+        initCalendar() {
+            const el = document.getElementById('calendar');
+            if (!el) return;
+            const isMob = window.innerWidth < 768;
+            const cal = new FullCalendar.Calendar(el, {
+                initialView: isMob ? 'listMonth' : 'dayGridMonth',
+                headerToolbar: {
+                    left: 'prev,next today',
+                    center: 'title',
+                    right: isMob ? 'listMonth' : 'dayGridMonth,listMonth'
+                },
+                events: bridge.eventsUrl,
+                displayEventTime: false,
+                eventTimeFormat: { hour: 'numeric', minute: '2-digit', meridiem: 'short' },
+                height: 'auto',
+                listDayFormat: { weekday: 'long', day: 'numeric', month: 'short' },
+                noEventsContent: 'No attendance records found for this period',
+                eventsSet: (evs) => {
+                    if (cal.view.type === 'dayGridMonth') {
+                        setTimeout(() => {
+                            el.querySelectorAll('.fc-daygrid-day').forEach(cell => {
+                                const d = cell.getAttribute('data-date');
+                                if (d && new Date(d).getDay() === 6 && !evs.some(e => e.start.startsWith(d))) cell.classList.add('saturday-holiday');
+                            });
+                        }, 50);
+                    }
+                }
+            });
+            cal.render();
+            window.addEventListener('resize', () => {
+                const nowMob = window.innerWidth < 768;
+                const currentIsList = cal.view.type === 'listMonth';
+                if (nowMob && !currentIsList) {
+                    cal.changeView('listMonth');
+                    cal.setOption('headerToolbar', { left: 'prev,next today', center: 'title', right: 'listMonth' });
+                } else if (!nowMob && currentIsList) {
+                    cal.changeView('dayGridMonth');
+                    cal.setOption('headerToolbar', { left: 'prev,next today', center: 'title', right: 'dayGridMonth,listMonth' });
+                }
+            });
+        },
+
+        getOfflineCheckInQueue() {
+            try {
+                return JSON.parse(localStorage.getItem('attendance_checkin_queue') || '[]');
+            } catch (e) {
+                return [];
+            }
+        },
+
+        setOfflineCheckInQueue(queue) {
+            localStorage.setItem('attendance_checkin_queue', JSON.stringify(queue));
+        },
+
+        queueOfflineCheckIn(payload) {
+            const queue = this.getOfflineCheckInQueue();
+            queue.push({ ...payload, queued_at: new Date().toISOString() });
+            this.setOfflineCheckInQueue(queue);
+            if (window.showToast) window.showToast('Saved locally. It will sync when the connection returns.', 'warning');
+        },
+
+        async syncQueuedCheckIns() {
+            if (!navigator.onLine) return;
+            const queue = this.getOfflineCheckInQueue();
+            if (!queue.length) return;
+
+            const remaining = [];
+            let syncedAny = false;
+
+            for (const payload of queue) {
+                try {
+                    const response = await fetch(bridge.checkinUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': bridge.csrf },
+                        body: JSON.stringify(payload)
+                    });
+                    const data = await response.json();
+                    if (data.success || (data.message && data.message.includes('already checked in'))) {
+                        syncedAny = true;
+                    } else {
+                        remaining.push(payload);
+                        break;
+                    }
+                } catch (e) {
+                    remaining.push(payload);
+                    break;
+                }
+            }
+
+            this.setOfflineCheckInQueue(remaining);
+            if (syncedAny && !remaining.length) {
+                if (window.showToast) window.showToast('Pending check-in synced.', 'success');
+                setTimeout(() => location.reload(), 1000);
+            }
+        },
+        font-size: 11px;
     }
-    .shimmer {
-        background: linear-gradient(90deg, #f1f5f9 25%, #f8fafc 50%, #f1f5f9 75%);
-        background-size: 200% 100%;
-        animation: skeleton-shimmer 1.5s infinite linear;
+    .fc-list-event {
+        background: white !important;
+        border: none !important;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    .fc-list-event:hover {
+        background: #fdfdfd !important;
+        transform: translateX(4px);
+    }
+    .fc-list-event,
+    .fc-list-event-main-frame {
+        flex-wrap: wrap;
+    }
+    .fc-list-event-main,
+    .fc-list-event-main-frame {
+        min-width: 0;
+    }
+    .fc-list-event-dot {
+        border-width: 5px !important;
+        margin-right: 15px !important;
+    }
+    .fc-list-event-title {
+        font-weight: 700 !important;
+        color: #1e293b !important;
+        font-size: 14px !important;
+        padding: 18px 0 !important;
+        white-space: normal !important;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        max-width: 100%;
+    }
+    .fc-list-event-time {
+        font-family: 'Space Mono', monospace;
+        font-weight: 700;
+        color: #94a3b8 !important;
+        font-size: 12px !important;
+        white-space: normal !important;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        max-width: 100%;
+    }
+    .fc-list-empty {
+        padding: 50px 0 !important;
+        background: white !important;
+        font-weight: 700;
+        color: #cbd5e1;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        font-size: 11px;
     }
 
-    /* Modern Calendar Styling */
-    .fc { font-family: 'Inter', sans-serif; border: none !important; }
-    .fc-theme-standard td, .fc-theme-standard th { border-color: #f1f5f9 !important; }
-    .fc-col-header-cell { background: transparent; padding: 20px 0 !important; border: none !important; }
-    .fc-col-header-cell-cushion { 
-        font-size: 11px; font-weight: 800; color: #94a3b8; 
-        text-transform: uppercase; letter-spacing: 0.15em; 
+    /* Fixed UI Overflow for Calendar Cells */
+    .fc-event {
+        white-space: normal !important;
+        word-break: break-word !important;
+        padding: 4px 8px !important;
+        border-radius: 8px !important;
+        border: none !important;
     }
-    .fc-daygrid-day-number { font-size: 14px; font-weight: 700; color: #cbd5e1; padding: 12px !important; }
-    .fc-day-today { background: rgba(249, 115, 22, 0.03) !important; }
-    .fc-daygrid-day:hover { background: #f8fafc; cursor: pointer; }
-    
-    /* Saturday Legend */
-    .saturday-holiday { background-color: #eff6ff !important; position: relative; }
-    .saturday-holiday::after {
-        content: 'HOLIDAY';
-        position: absolute; bottom: 8px; right: 8px;
-        font-size: 9px; font-weight: 900; color: #2563eb;
-        letter-spacing: 0.05em;
+    .fc-event-title {
+        font-size: 11px !important;
+        font-weight: 800 !important;
+        line-height: 1.2 !important;
     }
-
-    /* Custom Transitions */
-    .hover-lift { transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
-    .hover-lift:hover { transform: translateY(-4px); }
-
-    /* Custom scrollbar */
-    .notice-scroll::-webkit-scrollbar { width: 4px; }
-    .notice-scroll::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
-
-    /* Mobile Responsiveness for FullCalendar Header */
-    @media (max-width: 768px) {
-        .fc-header-toolbar {
-            display: flex !important;
-            flex-direction: column !important;
-            gap: 10px;
-            align-items: center !important;
-        }
-        .fc-toolbar-chunk {
-            display: flex;
-            justify-content: center;
-            width: 100%;
-        }
-        .fc-toolbar-title {
-            font-size: 1.25rem !important;
-            text-align: center;
-        }
-        .fc-button {
-            padding: 0.4rem 0.6rem !important;
-            font-size: 10px !important;
-        }
+    .fc-daygrid-event {
+        margin-top: 4px !important;
+        margin-bottom: 4px !important;
     }
-
-    /* Container Adjustments on Mobile */
-    @media (max-width: 640px) {
-        .min-h-screen {
-            padding-left: 1rem !important;
-            padding-right: 1rem !important;
-            padding-top: 1.5rem !important;
-        }
-        .max-w-\[1500px\] {
-            gap: 1.5rem !important;
-        }
-        .grid {
-            gap: 1rem !important;
-        }
-    }
-
-    /* Notice Popup Animation */
-    @keyframes notice-slip-fade {
-        0% { transform: translateY(-20px); opacity: 0; }
-        5% { transform: translateY(0); opacity: 1; }
-        95% { transform: translateY(0); opacity: 1; }
-        100% { transform: translateY(-20px); opacity: 0; }
-    }
-    .notice-popup { animation: notice-slip-fade 4s ease-in-out forwards; }
 </style>
 
 <!-- SERVER DATA BRIDGE (Prevents JS Linting Errors) -->
@@ -139,31 +221,7 @@
 {% endif %}
 
 <div class="min-h-screen bg-[#f8fafc] px-4 py-8 md:px-10 lg:py-12" x-data="dashboardUI()">
-    <div class="max-w-[1500px] mx-auto space-y-8">
-        <!-- GPS Location / Bypass Status Banner -->
-        <div x-show="showGpsBanner" x-cloak x-transition
-             class="rounded-[2rem] p-5 flex items-center justify-between transition-all duration-300 shadow-sm border"
-             :class="gpsStatus === 'inside' ? 'bg-emerald-50/50 border-emerald-100' : gpsStatus === 'outside' ? 'bg-rose-50/50 border-rose-100' : 'bg-amber-50/50 border-amber-100'">
-            <div class="flex items-center space-x-4">
-                <div class="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-sm"
-                     :class="gpsStatus === 'inside' ? 'bg-emerald-100 text-emerald-600' : gpsStatus === 'outside' ? 'bg-rose-100 text-rose-600' : 'bg-amber-100 text-amber-600'">
-                    <svg x-show="gpsStatus === 'inside'" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.242-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                    <svg x-show="gpsStatus === 'outside'" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                    <svg x-show="gpsStatus === 'checking'" class="w-6 h-6 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                    <svg x-show="gpsStatus === 'denied'" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
-                </div>
-                <div>
-                    <p class="text-[11px] font-black uppercase tracking-widest text-slate-400 mb-0.5">Location Status</p>
-                    <p class="text-sm font-bold"
-                       :class="gpsStatus === 'inside' ? 'text-emerald-700' : gpsStatus === 'outside' ? 'text-rose-700' : 'text-amber-700'"
-                       x-text="gpsMessage">Checking location...</p>
-                </div>
-            </div>
-            <button @click="refreshGps()" x-show="!checkedIn && !shiftCompleted"
-                    class="px-6 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 transition-all shadow-sm active:scale-95">
-                Refresh
-            </button>
-        </div>
+    <div class="max-w-7xl mx-auto space-y-8">
         
         <!-- SECTION 1: HEADER & COMMAND CENTER -->
         <header class="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-8">
@@ -178,10 +236,12 @@
                 </h1>
                 
                 {% if current_user.location_bypass_until and current_user.location_bypass_until > now %}
-                <div class="mt-4 inline-flex items-center space-x-2 px-4 py-2 bg-emerald-50 border border-emerald-200 rounded-xl shadow-sm">
-                    <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                    <span class="text-xs font-black uppercase tracking-widest text-emerald-700">Location Bypass Active</span>
-                    <span class="text-[10px] font-bold text-emerald-600/80 ml-2">(Expires: {{ current_user.location_bypass_until.strftime('%H:%M, %b %d') }})</span>
+                <div class="mt-4 flex flex-col sm:flex-row sm:items-center gap-2 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-xl shadow-sm w-fit">
+                    <div class="flex items-center space-x-2">
+                        <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                        <span class="text-xs font-black uppercase tracking-widest text-emerald-700">Location Verification Active</span>
+                    </div>
+                    <span class="text-[10px] font-bold text-emerald-600/80 sm:ml-2">(Policy: Logged-in Office Access)</span>
                 </div>
                 {% endif %}
             </div>
@@ -229,16 +289,66 @@
                         </button>
                     </template>
 
-                    <!-- Shift Complete Status -->
-                    <template x-if="shiftCompleted">
-                        <div class="px-10 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase tracking-wider text-[11px] border border-slate-200 flex items-center space-x-2">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
-                            <span>Shift Fully Logged</span>
+                    <!-- Shift Complete Status & Start OT -->
+                    <template x-if="shiftCompleted && !overtimeActive">
+                        <div class="flex items-center space-x-3">
+                            <div class="px-6 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase tracking-wider text-[11px] border border-slate-200 flex items-center space-x-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
+                                <span>Shift Fully Logged</span>
+                            </div>
+                            <button @click="startOT()" :disabled="loading"
+                                    class="px-8 py-4 bg-orange-600 hover:bg-orange-700 text-white rounded-2xl font-black uppercase tracking-wider text-[11px] transition-all shadow-lg shadow-orange-200 disabled:opacity-50">
+                                Start Overtime
+                            </button>
                         </div>
                     </template>
                 </div>
             </div>
         </header>
+
+        <!-- OT WARNING BANNER -->
+        <template x-if="overtimeActive && otRemainingSeconds <= 900">
+            <div class="fixed top-24 left-0 right-0 z-[150] px-4 animate-bounce">
+                <div class="max-w-7xl mx-auto bg-rose-600 text-white p-4 rounded-2xl shadow-2xl flex items-center justify-between border-2 border-white/20">
+                    <div class="flex items-center space-x-3">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                        <div>
+                            <p class="text-[10px] font-black uppercase tracking-[0.2em] opacity-80">Security Warning</p>
+                            <p class="text-sm font-black">SYSTEM LOCKOUT IN <span x-text="otTimerFormatted"></span> — SAVE YOUR WORK NOW!</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </template>
+
+        <!-- SECTION 0: OVERTIME ACTIVE COMMAND CENTER -->
+        <template x-if="overtimeActive">
+            <div class="bg-gradient-to-br from-orange-600 to-amber-700 p-8 rounded-[3rem] shadow-2xl border-4 border-white/10 text-white mb-10">
+                <div class="flex flex-col md:flex-row justify-between items-center gap-8">
+                    <div class="flex items-center space-x-6">
+                        <div class="w-20 h-20 bg-white/20 rounded-[2rem] flex items-center justify-center backdrop-blur-xl border border-white/20 shadow-inner">
+                            <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        </div>
+                        <div>
+                            <p class="text-[11px] font-black uppercase tracking-[0.3em] opacity-70 mb-1">Overtime Mode Active</p>
+                            <h2 class="text-4xl font-black tracking-tighter">Planned Session</h2>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center space-x-8">
+                        <div class="text-right">
+                            <p class="text-[11px] font-black uppercase tracking-[0.2em] opacity-70 mb-2">Remaining Access</p>
+                            <div class="text-6xl font-['Space_Mono'] font-bold tracking-tighter tabular-nums" 
+                                 :class="otRemainingSeconds <= 900 ? 'text-rose-200 animate-pulse' : ''"
+                                 x-text="otTimerFormatted">00:00:00</div>
+                        </div>
+                        <button @click="finishOT()" class="px-10 py-5 bg-white text-orange-600 rounded-3xl font-black uppercase tracking-[0.15em] text-xs hover:bg-slate-50 transition-all shadow-xl shadow-orange-900/20 active:scale-95">
+                            Finish Work
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </template>
 
         <!-- SECTION 2: INSIGHT GRID (STATS) -->
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
@@ -282,15 +392,18 @@
                         </template>
                     </div>
                 </div>
-                <p class="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-1" x-text="isEmployee ? 'Monthly Base Salary' : 'Program Milestone'">Stat</p>
+                <p class="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-1" x-text="isEmployee ? 'Monthly Base' : 'Program Milestone'">Stat</p>
                 <div class="flex items-baseline space-x-1">
                     <template x-if="isEmployee">
-                        <span class="text-3xl font-black text-slate-900 tracking-tighter">Rs.<span x-text="baseSalary">0</span></span>
+                        <span class="text-3xl font-black text-slate-900 tracking-tighter">Rs.<span x-text="(parseFloat(baseSalary) / 12).toLocaleString('en-IN', {maximumFractionDigits: 0})">0</span></span>
                     </template>
                     <template x-if="!isEmployee">
                         <span class="text-3xl font-black text-slate-900 tracking-tighter" x-text="milestoneLabel">Ongoing</span>
                     </template>
                 </div>
+                <template x-if="isEmployee && payroll.absent_days">
+                    <p class="text-[9px] text-rose-500 font-bold mt-2" x-text="'Deductions: Rs.' + (payroll.absent_deduction + payroll.leave_deduction).toFixed(2)"></p>
+                </template>
             </div>
 
             <!-- OVERTIME / STATUS (Dynamic 4th Column) -->
@@ -301,10 +414,9 @@
                             <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                         </div>
                     </div>
-                    <p class="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-1">Estimated Overtime</p>
+                    <p class="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-1">Overtime Per Hour</p>
                     <div class="flex items-baseline space-x-2">
-                        <span class="text-3xl font-black text-slate-900 tracking-tighter" x-text="'Rs.' + estimatedOT">Rs.0</span>
-                        <span class="text-[10px] font-bold text-amber-600/60" x-text="'Rate: Rs.' + otRate + '/hr'"></span>
+                        <span class="text-3xl font-black text-slate-900 tracking-tighter" x-text="'Rs.' + parseFloat(otRate).toFixed(2)">Rs.0</span>
                     </div>
                 </div>
             </template>
@@ -323,16 +435,83 @@
                 </div>
             </template>
 
-            <!-- SECURITY BADGE TRIGGER -->
-            <div @click="window.location.href='/qr/my-badge'" 
-                 class="bg-orange-600 p-6 rounded-[2.5rem] shadow-xl shadow-orange-200 hover-lift group cursor-pointer border-4 border-white">
-                <div class="flex justify-between items-start mb-6">
-                    <div class="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center text-white backdrop-blur-md">
-                        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v-4m6 0h-2m-6 0H6m6 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+            <!-- INTERACTIVE SECURITY BADGE CARD -->
+            <div @click="openBadge()" 
+                 class="bg-gradient-to-br from-slate-900 to-slate-800 p-6 rounded-[2.5rem] shadow-xl border-4 border-white/10 flex flex-col justify-between hover-lift cursor-pointer group">
+                <div class="flex justify-between items-start mb-4">
+                    <div class="w-12 h-12 bg-orange-500/20 rounded-2xl flex items-center justify-center text-orange-500 backdrop-blur-md group-hover:bg-orange-500 group-hover:text-white transition-all">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v-4m6 0h-2m-6 0H6m6 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    </div>
+                    <span class="text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400">Active</span>
+                </div>
+                <div>
+                    <p class="text-[10px] font-black text-orange-400 uppercase tracking-widest mb-1">Company Access</p>
+                    <h3 class="text-xl font-black text-white tracking-tight leading-tight">Security Badge</h3>
+                </div>
+                <div class="mt-4 flex items-center text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                    <span>Click to reveal QR</span>
+                    <svg class="w-3 h-3 ml-2 animate-bounce-x" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECURITY BADGE MODAL -->
+        <div x-show="showBadgeModal" 
+             x-transition:enter="transition ease-out duration-300"
+             x-transition:enter-start="opacity-0 scale-95"
+             x-transition:enter-end="opacity-100 scale-100"
+             x-transition:leave="transition ease-in duration-200"
+             x-transition:leave-start="opacity-100 scale-100"
+             x-transition:leave-end="opacity-0 scale-95"
+             class="fixed inset-0 z-[1000] flex items-center justify-center p-4 sm:p-6"
+             style="display: none;">
+            <!-- Backdrop -->
+            <div class="absolute inset-0 bg-slate-900/80 backdrop-blur-xl" @click="showBadgeModal = false"></div>
+            
+            <!-- Modal Content -->
+            <div class="relative bg-white w-full max-w-md rounded-[3rem] shadow-2xl overflow-hidden border border-white/20">
+                <div class="p-8 text-center bg-gradient-to-br from-slate-50 to-white">
+                    <button @click="showBadgeModal = false" class="absolute top-6 right-6 p-2 rounded-full hover:bg-slate-100 text-slate-400 transition-colors">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                    
+                    <p class="text-[11px] font-black text-orange-600 uppercase tracking-widest mb-2">Authenticated Access</p>
+                    <h2 class="text-2xl font-black text-slate-900 tracking-tight mb-8">Security Badge</h2>
+                    
+                    <!-- QR Area -->
+                    <div class="flex flex-col items-center justify-center p-6 bg-white rounded-[2.5rem] shadow-inner border border-slate-100 mb-8 mx-auto w-fit">
+                        <div id="modal-qr-loading" x-show="!qrRendered" class="flex flex-col items-center py-10">
+                            <div class="w-10 h-10 border-4 border-orange-500/20 border-t-orange-500 rounded-full animate-spin mb-4"></div>
+                            <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Generating Secure QR...</p>
+                        </div>
+                        <div id="modal-qr-canvas" class="p-2 bg-white rounded-2xl shadow-lg border border-slate-50"></div>
+                    </div>
+
+                    <!-- Badge Info -->
+                    <div class="grid grid-cols-2 gap-4 mb-8">
+                        <div class="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-left">
+                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Expires On</p>
+                            <p class="text-sm font-black text-slate-800" x-text="badgeExpiry || '—'">—</p>
+                        </div>
+                        <div class="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-left">
+                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Refresh In</p>
+                            <p class="text-sm font-black" :class="badgeDaysLeft < 30 ? 'text-amber-500' : 'text-emerald-500'" x-text="badgeDaysLeft !== null ? badgeDaysLeft + ' days' : '—'">—</p>
+                        </div>
+                    </div>
+
+                    <div class="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-center space-x-3 text-left">
+                        <div class="w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-white flex-shrink-0">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                        </div>
+                        <div>
+                            <p class="text-[10px] font-black text-emerald-700 uppercase tracking-wider">Multi-Scan Token Active</p>
+                            <p class="text-[10px] text-emerald-600 font-bold opacity-80">Valid for physical gate access and geofencing.</p>
+                        </div>
                     </div>
                 </div>
-                <p class="text-[11px] font-black text-orange-100 uppercase tracking-widest mb-1">Company Access</p>
-                <h3 class="text-xl font-black text-white tracking-tight">Security Badge</h3>
+                <div class="bg-slate-900 p-6 text-center">
+                    <p class="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em]">Authorized Personnel Only</p>
+                </div>
             </div>
         </div>
 
@@ -379,6 +558,7 @@
 <!-- EXTERNAL LIBRARIES (LOCALIZED) -->
 <link href="{{ url_for('static', filename='css/vendor/fullcalendar.min.css') }}" rel='stylesheet' />
 <script src="{{ url_for('static', filename='js/vendor/fullcalendar.min.js') }}"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" nonce="{{ csp_nonce() }}"></script>
 
 <!-- REBUILT DASHBOARD LOGIC (V2) -->
 <script nonce="{{ csp_nonce() }}">
@@ -395,9 +575,15 @@ function dashboardUI() {
         loading: false,
         statsLoaded: true,
         showQR: false,
+        showBadgeModal: false,
+        qrRendered: false,
+        badgeUrl: null,
+        badgeExpiry: null,
+        badgeDaysLeft: null,
+        badgeExpired: false,
         attendanceScore: bridge.initialScore || '0',
         leaveBalance: bridge.initialLeaves || '0',
-        baseSalary: parseFloat(bridge.baseSalary || 0).toLocaleString(),
+        baseSalary: parseFloat(bridge.baseSalary || 0),
         milestoneLabel: bridge.initialWorkshop || '...',
         workshopStatus: bridge.initialWorkshop || 'Ongoing',
         paymentStatus: bridge.initialPayment || 'Pending',
@@ -406,26 +592,68 @@ function dashboardUI() {
         estimatedOT: '0',
         otRate: parseFloat(bridge.otRate || 0),
         timerPulseClass: 'bg-slate-300',
-        gpsStatus: 'checking',
-        gpsMessage: 'Detecting location...',
-        gpsDistance: null,
-        gpsLat: null,
-        gpsLon: null,
-        showGpsBanner: true,
-        hasBypass: {{ 'true' if current_user.location_bypass_until and current_user.location_bypass_until > now else 'false' }},
+        
+        // Overtime State
+        overtimeActive: false,
+        otPlannedSeconds: 0,
+        otRemainingSeconds: 0,
+        otWarningShown: false,
+        otTimer: null,
+        otTimerFormatted: '00:00:00',
+        meta: bridge,
 
+        payroll: {},
         init() {
             this.initSession();
             this.fetchStats();
+            this.fetchPayroll();
+            this.checkInProgressOT();
+            this.syncQueuedCheckIns();
             this.$nextTick(() => this.initCalendar());
-            if (this.hasBypass) {
-                this.gpsStatus = 'inside';
-                this.gpsMessage = 'Location Bypass Active';
-            } else if (this.checkedIn || this.shiftCompleted) {
-                this.gpsStatus = 'inside';
-                this.gpsMessage = 'Location Verified';
-            } else {
-                this.refreshGps();
+            window.addEventListener('online', () => this.syncQueuedCheckIns());
+            setInterval(() => this.fetchStats(), 60000);
+            setInterval(() => this.fetchPayroll(), 30000);
+        },
+        
+        async syncQueuedCheckIns() {
+            if (!navigator.onLine) return;
+            const queue = JSON.parse(localStorage.getItem('ems_checkin_queue') || '[]');
+            if (queue.length === 0) return;
+
+            console.log('Syncing queued actions...', queue);
+            for (const item of queue) {
+                try {
+                    const r = await fetch(item.url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': bridge.csrf },
+                        body: JSON.stringify(item.body)
+                    });
+                    const d = await r.json();
+                    if (d.success) console.log(`Queued action ${item.type} synced.`);
+                } catch(e) { console.error('Failed to sync queued action', e); }
+            }
+            localStorage.removeItem('ems_checkin_queue');
+            if (window.showToast) window.showToast('✅ Offline records synchronized.', 'success');
+            setTimeout(() => location.reload(), 1000);
+        },
+
+        queueOfflineCheckIn(type, url, body) {
+            const queue = JSON.parse(localStorage.getItem('ems_checkin_queue') || '[]');
+            queue.push({ type, url, body, timestamp: new Date().toISOString() });
+            localStorage.setItem('ems_checkin_queue', JSON.stringify(queue));
+            
+            window.showToast('📡 You are offline. Action saved locally and will sync when online.', 'warning');
+            
+            // Optimistic UI update
+            if (type === 'checkin') { this.checkedIn = true; this.checkInTime = new Date(); this.startTimer(); }
+            if (type === 'checkout') { this.shiftCompleted = true; this.checkedIn = false; }
+        },
+
+        checkInProgressOT() {
+            // Check if OT was already active from session/server
+            if (window.location.search.includes('ot_active')) {
+                // Fallback for immediate refresh after start
+                this.overtimeActive = true;
             }
         },
         initSession() {
@@ -463,6 +691,49 @@ function dashboardUI() {
                 this.milestoneLabel = d.workshop_status || 'Ongoing';
             } catch(e) { console.error('Stats fetch failed', e); }
         },
+        async fetchPayroll() {
+            if (!this.isEmployee) return;
+            try {
+                const r = await fetch('/staff/api/payroll');
+                if (r.ok) {
+                    const d = await r.json();
+                    this.payroll = d;
+                }
+            } catch(e) { console.error('Payroll fetch failed', e); }
+        },
+        async openBadge() {
+            this.showBadgeModal = true;
+            if (!this.qrRendered) {
+                await this.fetchBadgeQR();
+            }
+        },
+        async fetchBadgeQR() {
+            try {
+                const r = await fetch('/qr/api/my-badge-qr');
+                const d = await r.json();
+                if (!d.success) return;
+                this.badgeUrl = d.badge_url;
+                this.badgeExpiry = d.expires_at;
+                this.badgeDaysLeft = d.days_until_refresh;
+                this.badgeExpired = d.days_until_refresh <= 0;
+
+                const canvas = document.getElementById('modal-qr-canvas');
+                if (canvas) {
+                    canvas.innerHTML = '';
+                    new QRCode(canvas, {
+                        text: d.badge_url,
+                        width: 220,
+                        height: 220,
+                        colorDark: '#0f172a',
+                        colorLight: '#ffffff',
+                        correctLevel: QRCode.CorrectLevel.H
+                    });
+                    this.qrRendered = true;
+                }
+            } catch(e) {
+                console.error('Badge QR fetch failed', e);
+            }
+        },
         async doAction(type) {
             const urlMap = {
                 'checkin': bridge.checkinUrl,
@@ -471,51 +742,36 @@ function dashboardUI() {
                 'end_break': bridge.breakEndUrl
             };
             if (type === 'checkout' && !confirm('Submit shift for review?')) return;
-            this.loading = true;
-            let payload = {};
-            if (type === 'checkin' && !this.hasBypass) {
-                try {
-                    const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, {timeout:10000}));
-                    payload = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
-                } catch(e) { console.warn("GPS Request Failed"); }
+            
+            const body = type === 'checkin' ? { client_timestamp: new Date().toISOString() } : {};
+
+            if (!navigator.onLine) {
+                this.queueOfflineCheckIn(type, urlMap[type], body);
+                return;
             }
+
+            this.loading = true;
             try {
                 const r = await fetch(urlMap[type], {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'X-CSRFToken': bridge.csrf },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify(body)
                 });
                 const d = await r.json();
                 if (d.success) { window.showToast(d.message, 'success'); setTimeout(() => location.reload(), 1000); }
                 else { window.showToast(d.message, 'error'); this.loading = false; }
-            } catch(e) { this.loading = false; window.showToast('Network error', 'error'); }
-        },
-        refreshGps() {
-            if (this.checkedIn || this.shiftCompleted || this.hasBypass) return;
-            this.gpsStatus = 'checking';
-            if (!navigator.geolocation) { this.gpsStatus = 'denied'; return; }
-            navigator.geolocation.getCurrentPosition(async (pos) => {
-                this.gpsLat = pos.coords.latitude;
-                this.gpsLon = pos.coords.longitude;
-                try {
-                    const r = await fetch('{{ url_for("staff.check_location") }}', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': bridge.csrf },
-                        body: JSON.stringify({ latitude: this.gpsLat, longitude: this.gpsLon })
-                    });
-                    const d = await r.json();
-                    this.gpsStatus = d.allowed ? 'inside' : 'outside';
-                    this.gpsMessage = d.allowed ? 'Within office geofence' : d.message;
-                } catch(e) { this.gpsStatus = 'outside'; }
-            }, (err) => { this.gpsStatus = 'denied'; }, {timeout:10000});
+            } catch(e) {
+                this.queueOfflineCheckIn(type, urlMap[type], body);
+                this.loading = false;
+            }
         },
         startTimer() {
             const update = () => {
                 const diff = Math.floor((new Date() - this.checkInTime) / 1000);
                 const h = Math.floor(diff/3600), m = Math.floor((diff%3600)/60), s = diff%60;
                 this.shiftTimer = [h, m, s].map(v=>v<10?'0'+v:v).join(':');
-                if (this.isEmployee && diff > 28800) {
-                    this.estimatedOT = Math.floor((diff-28800)/3600 * this.otRate).toLocaleString();
+                if (this.isEmployee && !this.estimatedOT) {
+                    this.estimatedOT = parseFloat(this.otRate).toFixed(2);
                 }
             };
             update(); setInterval(update, 1000);
@@ -525,29 +781,99 @@ function dashboardUI() {
             const h = Math.floor(diff/3600), m = Math.floor((diff%3600)/60), s = diff%60;
             this.shiftTimer = [h, m, s].map(v=>v<10?'0'+v:v).join(':');
         },
+
+        startOTTimer(seconds) {
+            this.overtimeActive = true;
+            this.otRemainingSeconds = seconds;
+            this.otTimer = setInterval(() => {
+                this.otRemainingSeconds--;
+                if (this.otRemainingSeconds <= 0) {
+                    clearInterval(this.otTimer);
+                    this.finishOT();
+                }
+                
+                // 15 Minute Warning
+                if (this.otRemainingSeconds <= 900 && !this.otWarningShown) {
+                    this.otWarningShown = true;
+                    if (window.showToast) window.showToast('Overtime ending in 15 minutes! Save your work.', 'warning');
+                }
+
+                this.updateOTTimerUI();
+            }, 1000);
+            this.updateOTTimerUI();
+        },
+
+        updateOTTimerUI() {
+            const h = Math.floor(this.otRemainingSeconds / 3600);
+            const m = Math.floor((this.otRemainingSeconds % 3600) / 60);
+            const s = this.otRemainingSeconds % 60;
+            this.otTimerFormatted = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        },
+
+        startOT() {
+            this.loading = true;
+            fetch('/staff/start-overtime', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': this.meta.csrf }
+            }).then(r => r.json()).then(d => {
+                this.loading = false;
+                if (d.success) {
+                    if (window.showToast) window.showToast('Overtime Session Started', 'success');
+                    this.startOTTimer(d.planned_hours * 3600);
+                } else {
+                    if (window.showToast) window.showToast(d.message, 'error');
+                }
+            });
+        },
+
+        finishOT() {
+            fetch('/staff/finish-overtime', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': this.meta.csrf }
+            }).then(r => r.json()).then(d => {
+                window.location.href = '/staff/locked';
+            });
+        },
         initCalendar() {
             const el = document.getElementById('calendar');
             if (!el) return;
             const isMob = window.innerWidth < 768;
             const cal = new FullCalendar.Calendar(el, {
                 initialView: isMob ? 'listMonth' : 'dayGridMonth',
-                headerToolbar: { left: 'prev,next today', center: 'title', right: isMob ? '' : 'dayGridMonth,listMonth' },
+                headerToolbar: { 
+                    left: 'prev,next today', 
+                    center: 'title', 
+                    right: isMob ? 'listMonth' : 'dayGridMonth,listMonth' 
+                },
                 events: bridge.eventsUrl,
+                // backend includes formatted time in event title; avoid duplicate rendering
+                displayEventTime: false,
                 eventTimeFormat: { hour: 'numeric', minute: '2-digit', meridiem: 'short' },
                 height: 'auto',
+                listDayFormat: { weekday: 'long', day: 'numeric', month: 'short' },
+                noEventsContent: 'No attendance records found for this period',
                 eventsSet: (evs) => {
-                    setTimeout(() => {
-                        el.querySelectorAll('.fc-daygrid-day').forEach(cell => {
-                            const d = cell.getAttribute('data-date');
-                            if (d && new Date(d).getDay() === 6 && !evs.some(e => e.start.startsWith(d))) cell.classList.add('saturday-holiday');
-                        });
-                    }, 50);
+                    if (cal.view.type === 'dayGridMonth') {
+                        setTimeout(() => {
+                            el.querySelectorAll('.fc-daygrid-day').forEach(cell => {
+                                const d = cell.getAttribute('data-date');
+                                if (d && new Date(d).getDay() === 6 && !evs.some(e => e.start.startsWith(d))) cell.classList.add('saturday-holiday');
+                            });
+                        }, 50);
+                    }
                 }
             });
             cal.render();
             window.addEventListener('resize', () => {
                 const nowMob = window.innerWidth < 768;
-                if (nowMob !== (cal.view.type === 'listMonth')) cal.changeView(nowMob ? 'listMonth' : 'dayGridMonth');
+                const currentIsList = cal.view.type === 'listMonth';
+                if (nowMob && !currentIsList) {
+                    cal.changeView('listMonth');
+                    cal.setOption('headerToolbar', { left: 'prev,next today', center: 'title', right: 'listMonth' });
+                } else if (!nowMob && currentIsList) {
+                    cal.changeView('dayGridMonth');
+                    cal.setOption('headerToolbar', { left: 'prev,next today', center: 'title', right: 'dayGridMonth,listMonth' });
+                }
             });
         }
     };

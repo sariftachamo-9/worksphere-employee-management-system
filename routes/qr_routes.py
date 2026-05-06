@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify, session, current_app
 from flask_login import login_user, logout_user, login_required, current_user
 from extensions import db, csrf
-from database.models import User, EmployeeProfile, LoginLog, AuditLog, Notice, LoginToken
+from database.models import User, EmployeeProfile, LoginLog, AuditLog, Notice, LoginToken, BadgeQRToken
 from utils.time_utils import get_nepal_time
 from datetime import datetime, timedelta
 import os
@@ -26,7 +26,7 @@ def grant_bypass(user_id):
     # Create a private Notice for the user
     notice = Notice(
         title="Location Bypass Activated",
-        content=f"Admin has granted you a 24-hour location bypass. You can now check in from any location until {user.location_bypass_until.strftime('%H:%M %d %b')}.",
+        content=f"Admin has granted you a 24-hour location bypass. You can now check in from any location until {user.location_bypass_until.strftime('%I:%M %p %d %b')}.",
         target_user_id=user.id,
         is_active=True,
         notice_type="System Alert"
@@ -161,6 +161,121 @@ def check_loc_status(token):
     """Polling endpoint for PC to check if mobile verification is done"""
     status = location_service.check_token_status(token)
     return jsonify({'status': status})
+
+# ─── Static Badge QR Token (6-Month Persistent) ─────────────────────────────
+
+def get_or_create_badge_token(user):
+    """Return the user's active BadgeQRToken, creating or refreshing if needed."""
+    now = get_nepal_time()
+    token_rec = BadgeQRToken.query.filter_by(
+        user_id=user.id, is_revoked=False
+    ).order_by(BadgeQRToken.created_at.desc()).first()
+
+    if token_rec and token_rec.expires_at > now:
+        return token_rec  # Still valid — return as-is
+
+    # Expired or missing — create a fresh 6-month token
+    new_token = BadgeQRToken(
+        user_id=user.id,
+        token=secrets.token_urlsafe(48),
+        expires_at=now + timedelta(days=183)  # ~6 months
+    )
+    db.session.add(new_token)
+    db.session.commit()
+    return new_token
+
+
+def build_badge_url(token_str):
+    """Build the full external URL for a badge scan token."""
+    external_url = os.environ.get('EXTERNAL_URL')
+    if external_url:
+        return external_url.rstrip('/') + url_for('qr.badge_scan', token=token_str)
+    url = url_for('qr.badge_scan', token=token_str, _external=True, _scheme='https')
+    return url.replace('http://', 'https://') if not current_app.debug else url
+
+
+@qr_bp.route('/api/my-badge-qr')
+@login_required
+def my_badge_qr():
+    """Return the current user's persistent badge QR URL + expiry info."""
+    rec = get_or_create_badge_token(current_user)
+    badge_url = build_badge_url(rec.token)
+    now = get_nepal_time()
+    days_left = (rec.expires_at - now).days
+    return jsonify({
+        'success': True,
+        'badge_url': badge_url,
+        'expires_at': rec.expires_at.strftime('%b %d, %Y'),
+        'days_until_refresh': days_left
+    })
+
+
+@qr_bp.route('/badge/<token>')
+def badge_scan(token):
+    """Multi-scan badge handler. Validates token, enforces geofence, logs in user."""
+    now = get_nepal_time()
+    rec = BadgeQRToken.query.filter_by(token=token, is_revoked=False).first()
+
+    if not rec or rec.expires_at <= now:
+        return render_template('qr/qr_error.html'), 403
+
+    user = rec.user
+    if not user or not user.is_active:
+        return render_template('qr/qr_error.html'), 403
+
+    # Pass through to auto_login page (which handles geofence + session setup)
+    # Re-use the existing token-based auto-login template by generating a short-lived token
+    from database.models import OfficeSettings
+    settings = OfficeSettings.query.first()
+    office_ip = settings.office_ip if settings and settings.office_ip else current_app.config.get('OFFICE_PUBLIC_IP', '')
+
+    # Check for IP bypass first (no need to show scan page)
+    if office_ip and request.remote_addr == office_ip:
+        # Directly log in the user
+        new_session_id = secrets.token_hex(16)
+        user.current_session_id = new_session_id
+        user.location_bypass_until = now + timedelta(hours=24)
+        session['session_token'] = new_session_id
+        session['session_version'] = current_app.config.get('BOOT_ID')
+        login_user(user)
+        db.session.add(AuditLog(user_id=user.id, action='Badge Scan Login (Office IP)', ip_address=request.remote_addr))
+        db.session.add(LoginLog(username=user.profile.full_name if user.profile else user.username,
+                                user_id=user.profile.employee_id if user.profile else str(user.id),
+                                role=user.role, login_time=now))
+        db.session.commit()
+        return redirect(url_for('staff.dashboard'))
+
+    # Otherwise show the GPS verification page (reuse existing flow)
+    # Generate a short-lived one-time login token so the user goes through geofence
+    short_token_str = secrets.token_urlsafe(32)
+    short_token = LoginToken(
+        token=short_token_str,
+        user_id=user.id,
+        expires_at=now + timedelta(minutes=5),
+        used=False
+    )
+    db.session.add(short_token)
+    db.session.commit()
+    user_info = {
+        'username': user.profile.full_name if user.profile else user.username,
+        'role': user.role
+    }
+    return render_template('qr/auto_login.html', token=short_token_str, user_info=user_info)
+
+
+@qr_bp.route('/api/revoke-badge/<int:user_id>', methods=['POST'])
+@login_required
+def revoke_badge(user_id):
+    """Admin: revoke a user's current badge token, forcing regeneration on next load."""
+    if current_user.role != 'admin':
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 403
+    BadgeQRToken.query.filter_by(user_id=user_id, is_revoked=False).update({'is_revoked': True})
+    db.session.add(AuditLog(user_id=current_user.id,
+                            action=f'Revoked Badge QR Token for user_id={user_id}',
+                            ip_address=request.remote_addr))
+    db.session.commit()
+    return jsonify({'success': True, 'message': 'Badge token revoked. A new one will be issued on next login.'})
+
 
 # ─── Badge Generation Routes ──────────────────────────────────────────────────
 
@@ -334,6 +449,11 @@ def qr_login_api():
     session['session_token'] = new_session_id
     
     login_user(user)
+    
+    # GRANT 24H BYPASS after successful QR login (which verified location)
+    user.location_bypass_until = get_nepal_time() + timedelta(hours=24)
+    db.session.add(AuditLog(user_id=user.id, action="24h Location Bypass Granted (QR Verified)", ip_address=request.remote_addr))
+    
     session['session_version'] = current_app.config.get('BOOT_ID')
     
     # Audit Log for QR Login

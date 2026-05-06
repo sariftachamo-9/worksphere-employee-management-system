@@ -73,7 +73,8 @@ class AttendanceService:
             start_date = fresh_start
 
         # Restrict sync up to YESTERDAY (don't mark today as absent yet)
-        yesterday = get_nepal_time().date() - timedelta(days=1)
+        today = get_nepal_time().date()
+        yesterday = today - timedelta(days=1)
         if end_date > yesterday:
             end_date = yesterday
 
@@ -263,7 +264,43 @@ class AttendanceMonitor:
         while True:
             with self.app.app_context():
                 try:
-                    pass  # Monitor running (heartbeat removed)
+                    from database.models import OfficeSettings, Attendance, OvertimeRequest
+                    from utils.time_utils import get_nepal_time
+                    
+                    settings = OfficeSettings.query.first()
+                    if settings and settings.auto_checkout_enabled:
+                        now = get_nepal_time()
+                        today = now.date()
+                        cutoff_time = settings.auto_checkout_time
+                        
+                        if now.time() >= cutoff_time:
+                            # Find active attendance for today (no checkout)
+                            active_sessions = Attendance.query.filter(
+                                Attendance.check_out == None,
+                                db.func.date(Attendance.check_in) == today
+                            ).all()
+                            
+                            for session in active_sessions:
+                                # Skip if user has an in-progress overtime session
+                                has_ot = OvertimeRequest.query.filter_by(
+                                    user_id=session.user_id, 
+                                    status='in-progress'
+                                ).first()
+                                
+                                if not has_ot:
+                                    session.check_out = datetime.combine(today, cutoff_time)
+                                    # Optional: Add audit log
+                                    from database.models import AuditLog
+                                    db.session.add(AuditLog(
+                                        user_id=session.user_id,
+                                        action=f"System Auto-Checkout at {cutoff_time.strftime('%I:%M %p')}",
+                                        ip_address="127.0.0.1"
+                                    ))
+                            
+                            if active_sessions:
+                                db.session.commit()
+                                # print(f"Auto-checked out {len(active_sessions)} employees.")
+                                
                 except Exception as e:
                     print(f"Monitor error: {e}")
             time.sleep(60) # Run every minute

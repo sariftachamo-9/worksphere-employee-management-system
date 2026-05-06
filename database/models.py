@@ -35,6 +35,7 @@ class User(db.Model, UserMixin):
     current_session_id = db.Column(db.String(100), nullable=True)
     location_bypass_until = db.Column(db.DateTime, nullable=True) # For 24h admin bypass
     overtime_bypass_until = db.Column(db.DateTime, nullable=True) # For overtime-based bypass
+    lockout_until = db.Column(db.DateTime, nullable=True) # Automated lockout until next day
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=get_nepal_time)
 
@@ -45,6 +46,12 @@ class User(db.Model, UserMixin):
     payrolls = db.relationship('Payroll', backref='user', lazy='dynamic', cascade="all, delete-orphan")
     audit_logs = db.relationship('AuditLog', backref='user', lazy='dynamic', cascade="all, delete-orphan")
     login_tokens = db.relationship('LoginToken', backref='user', lazy='dynamic', cascade="all, delete-orphan")
+
+    def is_locked_out(self):
+        if not self.lockout_until:
+            return False
+        from utils.time_utils import get_nepal_time
+        return get_nepal_time() < self.lockout_until
 
 
 
@@ -256,6 +263,21 @@ class LoginToken(db.Model):
     browser_fingerprint = db.Column(db.String(64), nullable=True) # Binding to browser session
     is_viewed = db.Column(db.Boolean, default=False)             # One-time view protection
 
+class BadgeQRToken(db.Model):
+    """Persistent, long-lived QR token for the employee security badge.
+    Valid for 6 months. Can be scanned multiple times (not one-time-use).
+    """
+    __tablename__ = 'badge_qr_tokens'
+    id         = db.Column(db.Integer, primary_key=True)
+    user_id    = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    token      = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=get_nepal_time)
+    expires_at = db.Column(db.DateTime, nullable=False)  # created_at + 6 months
+    is_revoked = db.Column(db.Boolean, default=False)    # Admin can revoke early
+
+    user = db.relationship('User', backref=db.backref('badge_tokens', lazy='dynamic', cascade='all, delete-orphan'))
+
+
 class VerificationToken(db.Model):
     __tablename__ = 'verification_tokens'
     id = db.Column(db.Integer, primary_key=True)
@@ -276,10 +298,14 @@ class OvertimeRequest(db.Model):
     hours = db.Column(db.Float, nullable=False)
     requested_date = db.Column(db.Date, nullable=False)
     reason = db.Column(db.Text)
-    status = db.Column(db.String(20), default='pending') # pending, approved, rejected
+    status = db.Column(db.String(20), default='pending') # pending, approved, rejected, in-progress, completed
     applied_on = db.Column(db.DateTime, default=get_nepal_time)
     approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     approved_at = db.Column(db.DateTime, nullable=True)
+    
+    # Session tracking
+    actual_start_time = db.Column(db.DateTime, nullable=True)
+    actual_end_time = db.Column(db.DateTime, nullable=True)
     
     user = db.relationship('User', foreign_keys=[user_id], backref='overtime_requests')
     approver = db.relationship('User', foreign_keys=[approved_by])

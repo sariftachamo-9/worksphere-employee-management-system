@@ -24,7 +24,7 @@
                     </div>
                     <div>
                         <h4 class="text-lg font-bold text-slate-800">{{ "Anonymous" if query.is_anonymous else query.name }}</h4>
-                        <p class="text-xs text-slate-400 font-bold uppercase tracking-widest">{{ query.category }} &bull; {{ query.created_at.strftime('%Y-%m-%d %H:%M') if query.created_at else 'N/A' }}</p>
+                        <p class="text-xs text-slate-400 font-bold uppercase tracking-widest">{{ query.category }} &bull; {{ query.created_at.strftime('%Y-%m-%d %I:%M %p') if query.created_at else 'N/A' }}</p>
                     </div>
                 </div>
                 <div class="flex items-center space-x-2">

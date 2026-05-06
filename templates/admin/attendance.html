@@ -85,8 +85,18 @@
                         </td>
                         <td class="px-8 py-5">
                             {% if record.is_virtual %}
-                                <div class="text-[11px] font-bold text-amber-600 uppercase tracking-widest">OFFICIALLY AWAY</div>
-                                <div class="text-[10px] text-slate-400 font-medium italic">Approved Leave</div>
+                                {% if record.status == 'on_leave' %}
+                                    <div class="text-[11px] font-bold text-amber-600 uppercase tracking-widest">OFFICIALLY AWAY</div>
+                                    <div class="text-[10px] text-slate-400 font-medium italic">Approved Leave</div>
+                                {% elif record.status == 'absent' %}
+                                    <div class="text-[11px] font-bold text-rose-600 uppercase tracking-widest">ABSENT</div>
+                                    <div class="text-[10px] text-slate-400 font-medium italic">No check-in record</div>
+                                {% elif record.status == 'holiday' %}
+                                    <div class="text-[11px] font-bold text-sky-600 uppercase tracking-widest">HOLIDAY</div>
+                                    <div class="text-[10px] text-slate-400 font-medium italic">Weekly Holiday</div>
+                                {% else %}
+                                    <div class="text-[11px] font-bold text-slate-600 uppercase tracking-widest">{{ record.status|upper }}</div>
+                                {% endif %}
                             {% else %}
                                 <div class="text-[12px] font-bold text-slate-700">{{ record.check_in.strftime('%I:%M %p') }}</div>
                                 <div class="text-[10px] text-slate-400 font-medium">{{ record.check_in.strftime('%b %d, %Y') }}</div>
@@ -123,7 +133,7 @@
                                 <div class="text-[10px] text-slate-400 font-medium mt-0.5">{{ record.break_start.strftime('%I:%M %p') }}</div>
                             {% elif record.break_start and record.break_end %}
                                 <div class="text-[11px] font-bold text-slate-700 uppercase tracking-widest">Completed</div>
-                                <div class="text-[10px] text-slate-400 font-medium mt-0.5">{{ record.break_start.strftime('%I:%M') }} - {{ record.break_end.strftime('%I:%M %p') }}</div>
+                                <div class="text-[10px] text-slate-400 font-medium mt-0.5">{{ record.break_start.strftime('%I:%M %p') }} - {{ record.break_end.strftime('%I:%M %p') }}</div>
                             {% else %}
                                 <span class="text-[11px] font-bold text-slate-300">--</span>
                             {% endif %}

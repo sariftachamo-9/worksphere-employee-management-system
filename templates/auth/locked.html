@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="min-h-[80vh] flex flex-col items-center justify-center px-6 text-center">
+    <!-- Pulsing Security Shield -->
+    <div class="relative mb-12">
+        <div class="w-32 h-32 bg-rose-500/10 rounded-full flex items-center justify-center animate-pulse">
+            <svg class="w-16 h-16 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+            </svg>
+        </div>
+        <div class="absolute -top-2 -right-2 bg-rose-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-lg shadow-rose-200">System Locked</div>
+    </div>
+
+    <h1 class="text-4xl md:text-5xl font-black text-slate-900 tracking-tight mb-4 font-['Outfit']">Access Restricted</h1>
+    <p class="text-slate-500 max-w-md mx-auto mb-12 font-medium leading-relaxed">
+        Your work session and approved overtime for today are complete. System access is restricted to ensure proper rest and security.
+    </p>
+
+    <!-- UNLOCK COUNTDOWN -->
+    <div class="bg-white p-8 rounded-[3rem] shadow-2xl border border-slate-100 flex flex-col items-center space-y-6 mb-12 w-full max-w-sm">
+        <p class="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em]">Unlock Countdown</p>
+        <div class="flex space-x-6">
+            <div class="text-center">
+                <p id="lock-hours" class="text-4xl font-black text-slate-900 tabular-nums">00</p>
+                <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Hours</p>
+            </div>
+            <div class="text-3xl font-black text-slate-200 self-start mt-1">:</div>
+            <div class="text-center">
+                <p id="lock-mins" class="text-4xl font-black text-slate-900 tabular-nums">00</p>
+                <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Mins</p>
+            </div>
+            <div class="text-3xl font-black text-slate-200 self-start mt-1">:</div>
+            <div class="text-center">
+                <p id="lock-secs" class="text-4xl font-black text-slate-900 tabular-nums">00</p>
+                <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Secs</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="flex flex-col sm:flex-row items-center gap-4">
+        <a href="{{ url_for('auth.logout') }}" class="px-8 py-3.5 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest text-[11px] hover:bg-black transition shadow-xl shadow-slate-200">Return to Login</a>
+        <button onclick="window.location.reload()" class="px-8 py-3.5 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black uppercase tracking-widest text-[11px] hover:bg-slate-50 transition shadow-sm">Check Status</button>
+    </div>
+
+    <p class="mt-16 text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center">
+        <svg class="w-3.5 h-3.5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        Automated Security Policy #402 (Burnout Prevention)
+    </p>
+</div>
+
+<script nonce="{{ csp_nonce() }}">
+    const lockoutUntil = new Date('{{ lockout_until.isoformat() }}');
+    
+    function updateCountdown() {
+        const now = new Date();
+        const diff = lockoutUntil - now;
+        
+        if (diff <= 0) {
+            window.location.href = '/dashboard';
+            return;
+        }
+        
+        const h = Math.floor(diff / 3600000);
+        const m = Math.floor((diff % 3600000) / 60000);
+        const s = Math.floor((diff % 60000) / 1000);
+        
+        document.getElementById('lock-hours').textContent = h.toString().padStart(2, '0');
+        document.getElementById('lock-mins').textContent = m.toString().padStart(2, '0');
+        document.getElementById('lock-secs').textContent = s.toString().padStart(2, '0');
+    }
+    
+    setInterval(updateCountdown, 1000);
+    updateCountdown();
+</script>
+{% endblock %}
