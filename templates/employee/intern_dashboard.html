@@ -338,11 +338,11 @@
                     </div>
                     <div class="grid grid-cols-2 gap-4 mb-8 text-left">
                         <div class="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Expires On</p>
+                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Validity</p>
                             <p class="text-sm font-black text-slate-800" id="modal-badge-expiry">—</p>
                         </div>
                         <div class="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Refresh In</p>
+                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Badge Type</p>
                             <p class="text-sm font-black text-emerald-500" id="modal-badge-days">—</p>
                         </div>
                     </div>
@@ -668,7 +668,7 @@ function internDashboard() {
                 const expiry = document.getElementById('modal-badge-expiry');
                 const days = document.getElementById('modal-badge-days');
                 if (expiry) expiry.textContent = d.expires_at;
-                if (days) { days.textContent = d.days_until_refresh + 'd'; days.className = 'text-sm font-black ' + (d.days_until_refresh < 30 ? 'text-amber-500' : 'text-emerald-500'); }
+                if (days) { days.textContent = 'Fixed'; days.className = 'text-sm font-black text-emerald-500'; }
                 if (canvas) {
                     canvas.innerHTML = '';
                     new QRCode(canvas, { text: d.badge_url, width: 220, height: 220, colorDark: '#0f172a', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.H });

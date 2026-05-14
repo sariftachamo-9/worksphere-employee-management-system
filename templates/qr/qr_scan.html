@@ -77,12 +77,15 @@
                     role: userData.role
                 };
             } catch (e) {
-                // If not JSON, see if it's a URL containing the token
-                // e.g., https://ems.com/qr/auto-login/<token>
+                // If not JSON, see if it's a URL containing a QR token.
                 if (qrString.includes('/auto-login/')) {
-                    const token = qrString.split('/auto-login/')[1];
+                    const token = qrString.split('/auto-login/')[1].split(/[?#]/)[0];
                     statusText.innerText = "Identity: Secure Token Linked";
                     requestBody = { token: token };
+                } else if (qrString.includes('/badge/')) {
+                    const token = qrString.split('/badge/')[1].split(/[?#]/)[0];
+                    statusText.innerText = "Identity: Fixed Badge Linked";
+                    requestBody = { badge_token: token };
                 } else {
                     throw new Error("Unrecognized Badge Format");
                 }
@@ -94,13 +97,14 @@
             if (!navigator.geolocation) throw new Error("Geolocation not supported");
             
             navigator.geolocation.getCurrentPosition(async (position) => {
-                const { latitude, longitude } = position.coords;
+                const { latitude, longitude, accuracy } = position.coords;
                 
                 statusDetail.innerText = "Synchronizing with servers...";
 
                 // Add location and timestamp to request
                 requestBody.latitude = latitude;
                 requestBody.longitude = longitude;
+                requestBody.accuracy = accuracy;
                 requestBody.timestamp = new Date().toISOString();
 
                 // Step 4: POST to Backend
@@ -126,7 +130,7 @@
                 let msg = "Location Access Denied";
                 if (error.code === error.TIMEOUT) msg = "Location Request Timed Out";
                 showError(msg);
-            }, { enableHighAccuracy: true, timeout: 5000 });
+            }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
 
         } catch (e) {
             showError(e.message);

@@ -19,11 +19,12 @@ class Config:
     MAIL_USERNAME = os.environ.get('MAIL_USERNAME')
     MAIL_PASSWORD = os.environ.get('MAIL_PASSWORD')
     MAIL_DEFAULT_SENDER = os.environ.get('MAIL_USERNAME')
-    MAIL_DEBUG = False # Stop verbose SMTP logs in console
+    MAIL_USE_SSL = False # Explicitly disable SSL to use TLS on 587
+    MAIL_DEBUG = False # Default to False, enabled in DevelopmentConfig
     
     # Geofence settings
-    OFFICE_LATITUDE = float(os.environ.get('OFFICE_LATITUDE', 27.7172))
-    OFFICE_LONGITUDE = float(os.environ.get('OFFICE_LONGITUDE', 85.3240))
+    OFFICE_LATITUDE = float(os.environ.get('OFFICE_LATITUDE', 27.704073))
+    OFFICE_LONGITUDE = float(os.environ.get('OFFICE_LONGITUDE', 85.331842))
     GEOFENCE_RADIUS = int(os.environ.get('GEOFENCE_RADIUS', 100))
     REQUIRE_LOCATION_VERIFICATION = True
     OFFICE_PUBLIC_IP = os.environ.get('OFFICE_PUBLIC_IP', '')
@@ -36,6 +37,11 @@ class Config:
     
     # Nepal Timezone
     TIMEZONE = os.environ.get('NEPAL_TIMEZONE', 'Asia/Kathmandu')
+
+    # Badge QR lifecycle: shared 6-month refresh windows anchored to May 1.
+    BADGE_REFRESH_ANCHOR_MONTH = int(os.environ.get('BADGE_REFRESH_ANCHOR_MONTH', 5))
+    BADGE_REFRESH_ANCHOR_DAY = int(os.environ.get('BADGE_REFRESH_ANCHOR_DAY', 1))
+    BADGE_REFRESH_INTERVAL_MONTHS = int(os.environ.get('BADGE_REFRESH_INTERVAL_MONTHS', 6))
     
     QR_LOGIN_SALT = os.environ.get('QR_LOGIN_SALT', 'qr-login-salt-34821')
     
@@ -49,6 +55,7 @@ class Config:
 
 class DevelopmentConfig(Config):
     DEBUG = True
+    MAIL_DEBUG = True # Enable verbose SMTP logs in development console
 
 class ProductionConfig(Config):
     DEBUG = False

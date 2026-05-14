@@ -9,7 +9,7 @@ def send_async_email(app, msg):
         try:
             mail.send(msg)
         except Exception as e:
-            current_app.logger.error(f"Failed to send email: {e}")
+            app.logger.error(f"Failed to send email to {msg.recipients}: {type(e).__name__}: {e}")
 
 def send_email(subject, recipient, template, **kwargs):
     app = current_app._get_current_object()

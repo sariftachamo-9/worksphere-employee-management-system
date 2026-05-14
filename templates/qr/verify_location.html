@@ -325,13 +325,13 @@
                         }
                     }
                     
-                    await submitLocation(latitude, longitude);
+                    await submitLocation(latitude, longitude, accuracy);
                 },
                 async (error) => {
                     if (error.code === error.PERMISSION_DENIED) {
                         // Attempt IP-based verification fallback
                         setStatus('loading', 'GPS Denied', 'Attempting network-level verification...');
-                        await submitLocation(null, null);
+                        await submitLocation(null, null, null);
                     } else {
                         setStatus('error', 'GPS Error', 'Could not determine your location. Please check your GPS and turn it on, then try again.');
                     }
@@ -340,7 +340,7 @@
             );
         }
 
-        async function submitLocation(lat, lon) {
+        async function submitLocation(lat, lon, accuracy) {
             try {
                 const response = await fetch('/qr/api/submit-location', {
                     method: 'POST',
@@ -348,7 +348,7 @@
                         'Content-Type': 'application/json',
                         'X-CSRFToken': '{{ csrf_token() }}'
                     },
-                    body: JSON.stringify({ token, latitude: lat, longitude: lon })
+                    body: JSON.stringify({ token, latitude: lat, longitude: lon, accuracy })
                 });
                 const result = await response.json();
 

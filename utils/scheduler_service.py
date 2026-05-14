@@ -1,5 +1,6 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from flask import current_app
 from extensions import db
 from database.models import Attendance, User, OfficeSettings, LeaveRequest, AuditLog
@@ -7,12 +8,14 @@ from utils.attendance_service import AttendanceService
 from utils.email_service import send_email
 from utils.time_utils import get_nepal_time
 from utils.payroll_service import PayrollService
+from utils.overtime_service import complete_elapsed_overtimes
 from datetime import datetime, time, timedelta
 import pytz
 
 class SchedulerService:
     def __init__(self, app=None):
-        self.scheduler = BackgroundScheduler()
+        self.timezone = pytz.timezone('Asia/Kathmandu')
+        self.scheduler = BackgroundScheduler(timezone=self.timezone)
         self.app = app
 
     def init_app(self, app):
@@ -48,7 +51,7 @@ class SchedulerService:
         # Schedule Daily Leave Cleanup at 12:05 AM
         self.scheduler.add_job(
             func=self._cleanup_expired_leaves,
-            trigger=CronTrigger(hour=0, minute=5),
+            trigger=CronTrigger(hour=0, minute=5, timezone=self.timezone),
             id='leave_cleanup',
             name='Expired Leaves Cleanup',
             replace_existing=True
@@ -56,23 +59,21 @@ class SchedulerService:
 
         self.scheduler.add_job(
             func=self._process_monthly_payroll,
-            trigger=CronTrigger(day=5, hour=0, minute=10),
+            trigger=CronTrigger(day=5, hour=0, minute=10, timezone=self.timezone),
             id='monthly_payroll',
             name='Monthly Payroll Processing',
             replace_existing=True
         )
 
         if settings.auto_checkout_enabled:
-            # Schedule daily auto-checkout at specified time
-            checkout_hour = settings.auto_checkout_time.hour
-            checkout_minute = settings.auto_checkout_time.minute
-
             self.scheduler.add_job(
                 func=self._perform_auto_checkout,
-                trigger=CronTrigger(hour=checkout_hour, minute=checkout_minute),
+                trigger=IntervalTrigger(minutes=1, timezone=self.timezone),
                 id='auto_checkout',
-                name='Daily Auto Checkout',
-                replace_existing=True
+                name='Auto Checkout Due Check',
+                replace_existing=True,
+                coalesce=True,
+                max_instances=1
             )
 
             if settings.email_reminders_enabled:
@@ -83,7 +84,7 @@ class SchedulerService:
 
                 self.scheduler.add_job(
                     func=self._send_checkout_reminders,
-                    trigger=CronTrigger(hour=reminder_time.hour, minute=reminder_time.minute),
+                    trigger=CronTrigger(hour=reminder_time.hour, minute=reminder_time.minute, timezone=self.timezone),
                     id='checkout_reminders',
                     name='Checkout Email Reminders',
                     replace_existing=True
@@ -92,7 +93,7 @@ class SchedulerService:
         # Schedule daily absent marking for users who did not check in today.
         self.scheduler.add_job(
             func=self._mark_absent_no_shows,
-            trigger=CronTrigger(hour=23, minute=45),
+            trigger=CronTrigger(hour=23, minute=45, timezone=self.timezone),
             id='mark_absent_no_shows',
             name='Daily Absent Marking',
             replace_existing=True
@@ -101,7 +102,7 @@ class SchedulerService:
         # Schedule daily auto-completion of roles for students and interns who finished their duration
         self.scheduler.add_job(
             func=self._auto_complete_roles,
-            trigger=CronTrigger(hour=0, minute=30),  # Run daily at 12:30 AM
+            trigger=CronTrigger(hour=0, minute=30, timezone=self.timezone),  # Run daily at 12:30 AM
             id='auto_complete_roles',
             name='Daily Auto Complete Roles',
             replace_existing=True
@@ -112,6 +113,15 @@ class SchedulerService:
         with self.app.app_context():
             try:
                 current_time = get_nepal_time()
+                complete_elapsed_overtimes(current_time)
+                settings = OfficeSettings.query.first()
+                if not settings or not settings.auto_checkout_enabled or not settings.auto_checkout_time:
+                    return
+
+                checkout_time = settings.auto_checkout_time.replace(second=0, microsecond=0)
+                checkout_at = datetime.combine(current_time.date(), checkout_time)
+                if current_time < checkout_at:
+                    return
 
                 # Find all users who are currently checked in (no check_out time)
                 checked_in_users = Attendance.query.filter(
@@ -119,9 +129,18 @@ class SchedulerService:
                     Attendance.check_in >= current_time.replace(hour=0, minute=0, second=0, microsecond=0)
                 ).all()
 
+                checked_out_count = 0
                 for attendance in checked_in_users:
+                    from database.models import OvertimeRequest
+                    has_ot = OvertimeRequest.query.filter_by(
+                        user_id=attendance.user_id,
+                        status='in-progress'
+                    ).first()
+                    if has_ot:
+                        continue
+
                     # Auto-checkout the user
-                    attendance.check_out = current_time
+                    attendance.check_out = checkout_at
 
                     # Calculate final status
                     user = attendance.user
@@ -133,11 +152,12 @@ class SchedulerService:
                     duration = (attendance.check_out - attendance.check_in).total_seconds() / 3600
                     if duration > 9:  # More than 9 hours worked
                         attendance.overtime_hours = duration - 9
+                    checked_out_count += 1
 
                     current_app.logger.info(f"Auto-checked out user {user.id} ({user.profile.full_name if user.profile else user.email})")
 
                 db.session.commit()
-                current_app.logger.info(f"Auto-checkout completed for {len(checked_in_users)} users")
+                current_app.logger.info(f"Auto-checkout due check completed for {checked_out_count} users")
 
             except Exception as e:
                 current_app.logger.error(f"Error during auto-checkout: {e}")

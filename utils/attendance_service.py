@@ -83,6 +83,27 @@ class AttendanceService:
             Attendance.check_in >= datetime.combine(start_date, datetime.min.time()),
             Attendance.check_in <= datetime.combine(end_date, datetime.max.time())
         ).all()
+        duplicate_records = []
+        records_by_date = {}
+        for att in records:
+            day = att.check_in.date()
+            current = records_by_date.get(day)
+            if current is None:
+                records_by_date[day] = att
+                continue
+
+            current_has_work = bool(current.check_out and current.check_out != current.check_in)
+            att_has_work = bool(att.check_out and att.check_out != att.check_in)
+            if att_has_work and not current_has_work:
+                duplicate_records.append(current)
+                records_by_date[day] = att
+            else:
+                duplicate_records.append(att)
+
+        for att in duplicate_records:
+            db.session.delete(att)
+        if duplicate_records:
+            has_changes = True
         
         # Fetch approved leaves for the period
         leaves = LeaveRequest.query.filter_by(user_id=user_id, status='approved').filter(
@@ -102,9 +123,9 @@ class AttendanceService:
                 curr_leave += timedelta(days=1)
 
         # Index records by date for O(1) lookup
-        record_map = {att.check_in.date(): att for att in records}
+        record_map = records_by_date
         
-        has_changes = False
+        has_changes = bool(duplicate_records)
         curr = start_date
         
         while curr <= end_date:
@@ -266,7 +287,9 @@ class AttendanceMonitor:
                 try:
                     from database.models import OfficeSettings, Attendance, OvertimeRequest
                     from utils.time_utils import get_nepal_time
+                    from utils.overtime_service import complete_elapsed_overtimes
                     
+                    complete_elapsed_overtimes()
                     settings = OfficeSettings.query.first()
                     if settings and settings.auto_checkout_enabled:
                         now = get_nepal_time()
@@ -288,12 +311,21 @@ class AttendanceMonitor:
                                 ).first()
                                 
                                 if not has_ot:
-                                    session.check_out = datetime.combine(today, cutoff_time)
+                                    checkout_time = cutoff_time.replace(second=0, microsecond=0)
+                                    session.check_out = datetime.combine(today, checkout_time)
+                                    session.status = AttendanceService.calculate_status(
+                                        session.check_in,
+                                        session.check_out,
+                                        session.user.role if session.user else 'employee'
+                                    )
+                                    duration = (session.check_out - session.check_in).total_seconds() / 3600
+                                    if duration > 9:
+                                        session.overtime_hours = duration - 9
                                     # Optional: Add audit log
                                     from database.models import AuditLog
                                     db.session.add(AuditLog(
                                         user_id=session.user_id,
-                                        action=f"System Auto-Checkout at {cutoff_time.strftime('%I:%M %p')}",
+                                        action=f"System Auto-Checkout at {checkout_time.strftime('%I:%M %p')}",
                                         ip_address="127.0.0.1"
                                     ))
                             

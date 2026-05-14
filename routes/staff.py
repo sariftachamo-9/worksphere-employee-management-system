@@ -1,17 +1,29 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify, current_app, session
 from flask_login import login_required, current_user
 from extensions import db
-from database.models import Attendance, LeaveRequest, EmployeeProfile, Notice, TimeLog, AuditLog
+from database.models import Attendance, LeaveRequest, EmployeeProfile, Notice, TimeLog, AuditLog, OvertimeRequest
 from utils.time_utils import get_nepal_time
 from utils.attendance_service import AttendanceService
 from utils.qr_service import QRService
 from database.models import Payroll
 from utils.payroll_service import PayrollService
+from utils.attendance_event_utils import dedupe_attendance_by_date
+from utils.overtime_service import (
+    MAX_DAILY_OVERTIME_HOURS,
+    complete_elapsed_overtimes,
+    complete_overtime,
+    overtime_end_time,
+    overtime_remaining_seconds,
+)
 from datetime import datetime, timedelta
 from werkzeug.security import check_password_hash, generate_password_hash
 from utils.security_utils import validate_password_strength, validate_nepal_phone_digits
 
 staff_bp = Blueprint('staff', __name__)
+
+def ensure_query_messages_table():
+    from database.models import QueryMessage
+    QueryMessage.__table__.create(bind=db.engine, checkfirst=True)
 
 from functools import wraps
 def check_lockout(f):
@@ -30,6 +42,9 @@ def check_lockout(f):
 @login_required
 @check_lockout
 def dashboard():
+    complete_elapsed_overtimes()
+    if current_user.is_locked_out():
+        return redirect(url_for('staff.locked'))
     today = get_nepal_time().date()
     
     today_str = today.strftime('%Y-%m-%d')
@@ -62,6 +77,12 @@ def dashboard():
             session[f'notice_seen_{latest_notice.id}'] = True
     
     qr_path = QRService.generate_employee_badge(current_user.id)
+    active_overtime = OvertimeRequest.query.filter_by(
+        user_id=current_user.id,
+        status='in-progress'
+    ).first()
+    active_overtime_end = overtime_end_time(active_overtime)
+    active_overtime_remaining = overtime_remaining_seconds(active_overtime) if active_overtime else 0
 
     # PRE-LOAD STATS FOR ULTRA-FAST INITIAL RENDERING
     from utils.leave_service import LeaveService
@@ -83,6 +104,9 @@ def dashboard():
                            latest_notice=latest_notice,
                            show_notice_popup=show_notice_popup,
                            today_date=today,
+                           active_overtime=active_overtime,
+                           active_overtime_end=active_overtime_end,
+                           active_overtime_remaining=active_overtime_remaining,
                            initial_stats=initial_stats,
                            now=get_nepal_time())
 
@@ -168,18 +192,25 @@ def check_in():
     lat = data.get('latitude')
     lon = data.get('longitude')
     
-    # Check Location Bypasses (Admin Grant or Office IP limit or Overtime)
+    # Check Location Bypasses (Admin, admin grant, Overtime, or Office IP)
     has_bypass = False
-    if current_user.location_bypass_until is not None and current_user.location_bypass_until > get_nepal_time():
+    if current_user.role == 'admin':
+        # Admins can bypass location verification
+        has_bypass = True
+    elif current_user.location_bypass_until and current_user.location_bypass_until > get_nepal_time():
+        # Admin-granted temporary or unlimited bypass
         has_bypass = True
     elif current_user.overtime_bypass_until and current_user.overtime_bypass_until > get_nepal_time():
+        # Overtime requests have explicit location bypass
         has_bypass = True
         
     settings = OfficeSettings.query.first()
     office_ip = settings.office_ip if settings and settings.office_ip else current_app.config.get('OFFICE_PUBLIC_IP', '')
     if office_ip and request.remote_addr == office_ip:
+        # Office network users can bypass
         has_bypass = True
 
+    # ⚠️  MANDATORY: All other users MUST provide valid GPS location
     if not has_bypass:
         if lat is None or lon is None:
             # Audit failure
@@ -286,9 +317,11 @@ def check_location():
     lat = data.get('latitude')
     lon = data.get('longitude')
     
-    # Check Bypass Status (Admin Grant or Office IP or Overtime)
+    # Check Bypass Status (Admin, admin grant, Overtime, or Office IP)
     has_bypass = False
-    if current_user.location_bypass_until is not None and current_user.location_bypass_until > get_nepal_time():
+    if current_user.role == 'admin':
+        has_bypass = True
+    elif current_user.location_bypass_until and current_user.location_bypass_until > get_nepal_time():
         has_bypass = True
     elif current_user.overtime_bypass_until and current_user.overtime_bypass_until > get_nepal_time():
         has_bypass = True
@@ -439,6 +472,7 @@ def my_profile():
 @login_required
 def my_queries():
     from database.models import ContactQuery, QueryMessage
+    ensure_query_messages_table()
     if request.method == 'POST':
         category = request.form.get('category')
         priority = request.form.get('priority')
@@ -471,6 +505,7 @@ def my_queries():
 @login_required
 def reply_query(query_id):
     from database.models import ContactQuery, QueryMessage
+    ensure_query_messages_table()
     query = ContactQuery.query.get_or_404(query_id)
     if query.email != current_user.email:
         return jsonify({'success': False, 'message': 'Unauthorized'}), 403
@@ -549,8 +584,8 @@ def my_overtime():
             flash('Invalid overtime type.', 'error')
             return redirect(url_for('staff.my_overtime'))
         
-        if hours <= 0 or hours > 12:
-            flash('Overtime hours must be between 0 and 12.', 'error')
+        if hours <= 0 or hours > MAX_DAILY_OVERTIME_HOURS:
+            flash(f'Overtime hours must be between 0 and {MAX_DAILY_OVERTIME_HOURS}.', 'error')
             return redirect(url_for('staff.my_overtime'))
         
         requested_date = date.fromisoformat(requested_date_str)
@@ -596,7 +631,7 @@ def attendance_events():
         query = query.filter(db.func.date(Attendance.check_in) >= start_date, 
                              db.func.date(Attendance.check_in) <= end_date)
                              
-    attendances = query.all()
+    attendances = dedupe_attendance_by_date(query.all())
     
     for att in attendances:
         color = '#10b981' # Green (present by default)
@@ -728,6 +763,7 @@ def locked():
 @check_lockout
 def start_overtime():
     from database.models import OvertimeRequest
+    complete_elapsed_overtimes()
     # Find approved OT for today
     today = get_nepal_time().date()
     ot = OvertimeRequest.query.filter_by(user_id=current_user.id, status='approved').filter(OvertimeRequest.requested_date == today).first()
@@ -735,11 +771,21 @@ def start_overtime():
     if not ot:
         return jsonify({'success': False, 'message': 'No approved overtime found for today.'}), 404
     
+    if float(ot.hours or 0) > MAX_DAILY_OVERTIME_HOURS:
+        return jsonify({'success': False, 'message': f'Overtime cannot exceed {MAX_DAILY_OVERTIME_HOURS} hours per day.'}), 400
+
+    now = get_nepal_time()
     ot.status = 'in-progress'
-    ot.actual_start_time = get_nepal_time()
+    ot.actual_start_time = now
+    current_user.overtime_bypass_until = overtime_end_time(ot)
     db.session.commit()
     
-    return jsonify({'success': True, 'planned_hours': ot.hours})
+    return jsonify({
+        'success': True,
+        'planned_hours': ot.hours,
+        'remaining_seconds': overtime_remaining_seconds(ot, now),
+        'end_time': overtime_end_time(ot).isoformat()
+    })
 
 @staff_bp.route('/finish-overtime', methods=['POST'])
 @login_required
@@ -748,12 +794,7 @@ def finish_overtime():
     ot = OvertimeRequest.query.filter_by(user_id=current_user.id, status='in-progress').first()
     
     if ot:
-        ot.status = 'completed'
-        ot.actual_end_time = get_nepal_time()
-    
-    # Set Hard Lockout until 12:01 AM tomorrow
-    tomorrow = get_nepal_time() + timedelta(days=1)
-    current_user.lockout_until = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 0, 1)
+        complete_overtime(ot, actor_ip=request.remote_addr or 'SYSTEM')
     db.session.commit()
     
     # Logout session

@@ -91,7 +91,6 @@ def qr_password_check(token):
             session['session_token'] = token
             
             login_user(user)
-            session['session_version'] = current_app.config.get('BOOT_ID')
             db.session.add(AuditLog(user_id=user.id, action="Admin identity verified via QR + Password", ip_address=request.remote_addr))
             db.session.commit()
             flash('Admin QR Login Successful.', 'success')
@@ -134,9 +133,7 @@ def login():
         import re
         role_selected = request.form.get('role', 'admin')
         domain_pattern = r'^[a-zA-Z0-9._%+-]+@ems\.com$'
-        if not re.match(domain_pattern, email, re.IGNORECASE):
-             db.session.add(AuditLog(action=f"Login Rejected: Domain Restriction ({email})", ip_address=ip))
-             db.session.commit()
+        if not re.match(domain_pattern, email):
              flash('Security Alert: Access is restricted to official @ems.com domains.', 'danger')
              return render_template('auth/login.html', selected_role=role_selected)
         
@@ -173,7 +170,19 @@ def login():
                     flash('Account Inactive: Please contact the administrator.', 'danger')
                     return render_template('auth/login.html', selected_role=selected_role)
 
-                # All users (including admins) now follow the OTP flow
+                if user.role == 'admin':
+                    # Admin password-only login (single-step)
+                    token = secrets.token_hex(16)
+                    user.current_session_id = token
+                    session['session_token'] = token
+
+                    login_user(user)
+                    db.session.add(AuditLog(user_id=user.id, action="Admin Login (Password Only)", ip_address=ip))
+                    db.session.commit()
+                    flash('Logged in successfully.', 'success')
+                    return redirect(url_for('admin.dashboard'))
+
+                # Non-admins: continue with OTP flow
                 otp = generate_otp()
                 user.otp = otp
                 user.otp_expiry = get_nepal_time() + timedelta(minutes=10)
@@ -193,17 +202,12 @@ def login():
                     pass
 
                 session['pending_user_id'] = user.id
-                session['login_location_verified'] = (request.form.get('location_verified') == 'true')
                 flash('Two-Factor Authentication: A security code has been sent to your email.', 'info')
                 return redirect(url_for('auth.verify_otp'))
             else:
-                db.session.add(AuditLog(user_id=user.id, action=f"Login Failed: Password Mismatch ({email})", ip_address=ip))
-                db.session.commit()
                 current_app.logger.warning(f"Login failed: Password mismatch for {email}")
                 flash("Invalid email or password.", "danger")
         else:
-            db.session.add(AuditLog(action=f"Login Failed: User Not Found ({email})", ip_address=ip))
-            db.session.commit()
             current_app.logger.warning(f"Login failed: User not found - {email}")
             flash("Invalid email or password.", "danger")
 
@@ -289,12 +293,6 @@ def verify_otp():
             session.pop('pending_user_id', None)
             
             db.session.add(AuditLog(user_id=user.id, action="Login", ip_address=ip))
-            
-            # GRANT 24H BYPASS if verified at login
-            if session.pop('login_location_verified', False):
-                user.location_bypass_until = get_nepal_time() + timedelta(hours=24)
-                db.session.add(AuditLog(user_id=user.id, action="24h Location Bypass Granted (Login Verified)", ip_address=ip))
-                
             db.session.commit()
             
             return redirect(url_for('admin.dashboard' if user.role == 'admin' else 'staff.dashboard'))

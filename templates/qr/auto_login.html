@@ -13,6 +13,9 @@
 
         <h2 class="text-2xl font-black text-slate-800 tracking-tight leading-tight mb-2">Secure Access</h2>
         <p class="text-sm font-bold text-slate-500 mb-8 uppercase tracking-widest">{{ user_info.username }}</p>
+        {% if user_info.employee_id %}
+        <p class="text-[10px] font-black text-slate-400 mb-8 uppercase tracking-[0.25em]">ID: {{ user_info.employee_id }}</p>
+        {% endif %}
 
         <div id="status-container" class="bg-slate-50 border border-slate-100 p-6 rounded-[2rem] transition-all duration-500">
             <div id="spinner-box" class="flex items-center justify-center space-x-4 mb-4">
@@ -47,6 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const spinner = document.getElementById('spinner');
     const statusContainer = document.getElementById('status-container');
     const token = "{{ token }}";
+    const isStaticBadge = {{ 'true' if is_static_badge|default(false) else 'false' }};
 
     function showError(msg) {
         spinner.classList.replace('block', 'hidden');
@@ -85,9 +89,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     'X-CSRFToken': '{{ csrf_token() }}'
                 },
                 body: JSON.stringify({
-                    token: token,
+                    [isStaticBadge ? 'badge_token' : 'token']: token,
                     latitude: position.coords.latitude,
-                    longitude: position.coords.longitude
+                    longitude: position.coords.longitude,
+                    accuracy: position.coords.accuracy
                 })
             });
 
@@ -113,7 +118,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             showError("GPS Signal Lost. Please retry.");
         }
-    }, { enableHighAccuracy: true, timeout: 8000 });
+    }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
 });
 </script>
 {% endblock %}

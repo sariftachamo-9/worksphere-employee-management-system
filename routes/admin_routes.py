@@ -9,8 +9,9 @@ from utils.id_generator import generate_staff_id
 from utils.email_service import send_notice_broadcast
 from werkzeug.security import generate_password_hash
 from utils.security_utils import validate_password_strength
-from utils.excel_sync import ExcelSyncService
 from utils.payroll_service import PayrollService
+from utils.attendance_event_utils import dedupe_attendance_by_date
+from utils.attendance_service import AttendanceService
 import re
 
 admin_bp = Blueprint('admin', __name__)
@@ -31,6 +32,10 @@ def admin_required(func):
             return redirect(url_for('staff.dashboard'))
         return func(*args, **kwargs)
     return wrapper
+
+def ensure_query_messages_table():
+    from database.models import QueryMessage
+    QueryMessage.__table__.create(bind=db.engine, checkfirst=True)
 
 @admin_bp.route('/generate-qr-login/<int:user_id>')
 @login_required
@@ -325,6 +330,7 @@ def update_query(query_id):
     reply = request.form.get('reply')
     if reply and reply.strip():
         from database.models import QueryMessage
+        ensure_query_messages_table()
         query.admin_reply = reply.strip() # Keep for legacy/UI convenience if needed
         admin_msg = QueryMessage(
             query_id=query.id,
@@ -342,9 +348,10 @@ def update_query(query_id):
 @admin_required
 def reply_query(query_id):
     from database.models import QueryMessage
+    ensure_query_messages_table()
     query = ContactQuery.query.get_or_404(query_id)
-    data = request.get_json() or request.form
-    reply_text = data.get('reply')
+    data = request.get_json(silent=True) or request.form
+    reply_text = (data.get('reply') or data.get('message') or data.get('acknowledgement') or '').strip()
     
     if not reply_text:
         if request.is_json:
@@ -359,7 +366,7 @@ def reply_query(query_id):
     admin_msg = QueryMessage(
         query_id=query.id,
         sender_type='admin',
-        message=reply_text.strip()
+        message=reply_text
     )
     db.session.add(admin_msg)
     db.session.commit()
@@ -1119,6 +1126,7 @@ def office_settings():
             # Restart scheduler with new settings
             if hasattr(current_app, 'scheduler') and current_app.scheduler:
                 current_app.scheduler.restart()
+                current_app.scheduler._perform_auto_checkout()
             
             flash('Office settings updated successfully.', 'success')
         except ValueError as e:
@@ -1309,7 +1317,8 @@ def _internal_onboard_logic(request, role, target):
     db.session.add(new_profile)
     db.session.commit()
     
-    # Sync to Excel
+    # Sync to Excel (lazy import to avoid heavy deps at app startup)
+    from utils.excel_sync import ExcelSyncService
     ExcelSyncService.sync_role_to_excel(role)
     
     flash(f'Staff created successfully! ID: {staff_id}', 'success')
@@ -1384,6 +1393,7 @@ def edit_staff(user_id):
         db.session.commit()
         
         # Sync to Excel
+        from utils.excel_sync import ExcelSyncService
         ExcelSyncService.sync_role_to_excel(role)
         
         flash('Staff profile updated successfully.', 'success')
@@ -1443,6 +1453,7 @@ def delete_staff(user_id):
     db.session.commit()
     
     # Sync to Excel
+    from utils.excel_sync import ExcelSyncService
     ExcelSyncService.sync_role_to_excel(role)
     
     flash('Staff member deleted successfully.', 'success')
@@ -1489,6 +1500,7 @@ def complete_role(user_id):
     db.session.commit()
     
     # Sync to Excel
+    from utils.excel_sync import ExcelSyncService
     ExcelSyncService.sync_role_to_excel(user.role)
     
     flash(msg, 'success')
@@ -1887,7 +1899,7 @@ def staff_attendance_events(user_id):
         except (ValueError, TypeError):
             pass
                              
-    attendances = query.all()
+    attendances = dedupe_attendance_by_date(query.all())
     
     for att in attendances:
         color = '#10b981' # Green (present by default)
@@ -1978,6 +1990,7 @@ def reactivate_staff(user_id):
     ))
     db.session.commit()
 
+    from utils.excel_sync import ExcelSyncService
     ExcelSyncService.sync_role_to_excel(user.role)
 
     flash(f'Account for {profile.full_name if profile else user.email} has been reactivated.', 'success')

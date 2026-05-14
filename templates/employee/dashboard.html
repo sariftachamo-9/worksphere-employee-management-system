@@ -199,6 +199,11 @@
      data-checkout-url="{{ url_for('staff.check_out') }}"
      data-break-start-url="{{ url_for('staff.start_break') }}"
      data-break-end-url="{{ url_for('staff.end_break') }}"
+     data-active-ot-id="{{ active_overtime.id if active_overtime else '' }}"
+     data-active-ot-hours="{{ active_overtime.hours if active_overtime else '' }}"
+     data-active-ot-start="{{ active_overtime.actual_start_time.isoformat() if active_overtime and active_overtime.actual_start_time else '' }}"
+     data-active-ot-end="{{ active_overtime_end.isoformat() if active_overtime_end else '' }}"
+     data-active-ot-remaining="{{ active_overtime_remaining if active_overtime else 0 }}"
      data-initial-score="{{ initial_stats.attendance_score }}"
      data-initial-leaves="{{ initial_stats.leave_balance }}"
      data-initial-workshop="{{ initial_stats.workshop_status }}"
@@ -490,12 +495,12 @@
                     <!-- Badge Info -->
                     <div class="grid grid-cols-2 gap-4 mb-8">
                         <div class="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-left">
-                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Expires On</p>
+                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Validity</p>
                             <p class="text-sm font-black text-slate-800" x-text="badgeExpiry || '—'">—</p>
                         </div>
                         <div class="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-left">
-                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Refresh In</p>
-                            <p class="text-sm font-black" :class="badgeDaysLeft < 30 ? 'text-amber-500' : 'text-emerald-500'" x-text="badgeDaysLeft !== null ? badgeDaysLeft + ' days' : '—'">—</p>
+                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Badge Type</p>
+                            <p class="text-sm font-black text-emerald-500">Fixed</p>
                         </div>
                     </div>
 
@@ -599,6 +604,7 @@ function dashboardUI() {
         otRemainingSeconds: 0,
         otWarningShown: false,
         otTimer: null,
+        otEndTime: null,
         otTimerFormatted: '00:00:00',
         meta: bridge,
 
@@ -650,10 +656,11 @@ function dashboardUI() {
         },
 
         checkInProgressOT() {
-            // Check if OT was already active from session/server
-            if (window.location.search.includes('ot_active')) {
-                // Fallback for immediate refresh after start
-                this.overtimeActive = true;
+            if (bridge.activeOtId && parseInt(bridge.activeOtRemaining || '0', 10) > 0) {
+                this.startOTTimer(
+                    parseInt(bridge.activeOtRemaining || '0', 10),
+                    bridge.activeOtEnd ? new Date(bridge.activeOtEnd + bridge.tzOffset) : null
+                );
             }
         },
         initSession() {
@@ -715,7 +722,7 @@ function dashboardUI() {
                 this.badgeUrl = d.badge_url;
                 this.badgeExpiry = d.expires_at;
                 this.badgeDaysLeft = d.days_until_refresh;
-                this.badgeExpired = d.days_until_refresh <= 0;
+                this.badgeExpired = false;
 
                 const canvas = document.getElementById('modal-qr-canvas');
                 if (canvas) {
@@ -782,14 +789,22 @@ function dashboardUI() {
             this.shiftTimer = [h, m, s].map(v=>v<10?'0'+v:v).join(':');
         },
 
-        startOTTimer(seconds) {
+        startOTTimer(seconds, endTime = null) {
             this.overtimeActive = true;
-            this.otRemainingSeconds = seconds;
+            this.otPlannedSeconds = seconds;
+            this.otEndTime = endTime;
+            this.otRemainingSeconds = Math.max(0, seconds);
+            if (this.otTimer) clearInterval(this.otTimer);
             this.otTimer = setInterval(() => {
-                this.otRemainingSeconds--;
+                if (this.otEndTime) {
+                    this.otRemainingSeconds = Math.max(0, Math.floor((this.otEndTime - new Date()) / 1000));
+                } else {
+                    this.otRemainingSeconds = Math.max(0, this.otRemainingSeconds - 1);
+                }
                 if (this.otRemainingSeconds <= 0) {
                     clearInterval(this.otTimer);
                     this.finishOT();
+                    return;
                 }
                 
                 // 15 Minute Warning
@@ -804,9 +819,10 @@ function dashboardUI() {
         },
 
         updateOTTimerUI() {
-            const h = Math.floor(this.otRemainingSeconds / 3600);
-            const m = Math.floor((this.otRemainingSeconds % 3600) / 60);
-            const s = this.otRemainingSeconds % 60;
+            const remaining = Math.max(0, this.otRemainingSeconds);
+            const h = Math.floor(remaining / 3600);
+            const m = Math.floor((remaining % 3600) / 60);
+            const s = remaining % 60;
             this.otTimerFormatted = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
         },
 
@@ -819,7 +835,10 @@ function dashboardUI() {
                 this.loading = false;
                 if (d.success) {
                     if (window.showToast) window.showToast('Overtime Session Started', 'success');
-                    this.startOTTimer(d.planned_hours * 3600);
+                    this.startOTTimer(
+                        parseInt(d.remaining_seconds || (d.planned_hours * 3600), 10),
+                        d.end_time ? new Date(d.end_time + this.meta.tzOffset) : null
+                    );
                 } else {
                     if (window.showToast) window.showToast(d.message, 'error');
                 }
