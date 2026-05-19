@@ -1,9 +1,5 @@
 import math
 
-LEGACY_PLACEHOLDER_LATITUDE = 27.7172
-LEGACY_PLACEHOLDER_LONGITUDE = 85.3240
-LEGACY_PLACEHOLDER_RADIUS = 100
-
 def calculate_distance(lat1, lon1, lat2, lon2):
     """
     Calculate the great circle distance between two points 
@@ -24,24 +20,6 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     r = 6371000 # Radius of earth in meters.
     return c * r
 
-def _is_default_placeholder(settings):
-    if not settings:
-        return True
-
-    try:
-        lat = float(settings.latitude)
-        lng = float(settings.longitude)
-        radius = int(settings.radius)
-    except (TypeError, ValueError):
-        return True
-
-    return (
-        abs(lat - LEGACY_PLACEHOLDER_LATITUDE) < 0.000001
-        and abs(lng - LEGACY_PLACEHOLDER_LONGITUDE) < 0.000001
-        and radius == LEGACY_PLACEHOLDER_RADIUS
-        and not getattr(settings, 'office_ip', None)
-    )
-
 def verify_location_access(lat, lng, accuracy=None):
     """
     Consolidated location verification logic.
@@ -59,25 +37,19 @@ def verify_location_access(lat, lng, accuracy=None):
         return False, "Location coordinates missing.", 0
 
     settings = OfficeSettings.query.first()
-    allowed_locs = AllowedLocation.query.filter_by(is_active=True).all()
-
-    primary_is_placeholder = _is_default_placeholder(settings)
-
-    if not settings or (primary_is_placeholder and not allowed_locs):
+    if not settings:
         return True, "Office settings not configured. Geofencing bypassed.", 0
         
     # 2. Check Primary Office
-    dist = float('inf')
-    if not primary_is_placeholder:
-        dist = calculate_distance(lat, lng, settings.latitude, settings.longitude)
-        if dist <= settings.radius:
-            return True, "Main Office", dist
+    dist = calculate_distance(lat, lng, settings.latitude, settings.longitude)
+    if dist <= settings.radius:
+        return True, "Main Office", dist
         
     # 3. Check Satellite Offices (AllowedLocation)
+    allowed_locs = AllowedLocation.query.filter_by(is_active=True).all()
     for loc in allowed_locs:
         d = calculate_distance(lat, lng, loc.latitude, loc.longitude)
         if d <= loc.radius:
             return True, loc.name, d
-        dist = min(dist, d)
             
     return False, f"Outside office radius (Distance: {int(dist)}m).", dist

@@ -69,10 +69,10 @@
                 <!-- QR AREA -->
                 <div class="w-full bg-slate-50 rounded-[2.5rem] p-6 border border-slate-100 relative group cursor-pointer transition-all hover:bg-white hover:shadow-inner">
                     <div id="qrcode" class="flex justify-center mix-blend-multiply opacity-90 transition-opacity group-hover:opacity-100">
-                        <img src="{{ qr_data_uri }}" alt="Permanent login QR badge for {{ user.profile.full_name or user.username }}" class="w-[320px] h-[320px] max-w-full" data-qr-target="{{ verify_url }}">
+                        <!-- QR Generated Here -->
                     </div>
                     <div class="mt-6 text-center">
-                        <div class="text-[10px] font-black text-slate-400 uppercase tracking-[0.5em] mb-1">SCAN TO LOGIN</div>
+                        <div class="text-[10px] font-black text-slate-400 uppercase tracking-[0.5em] mb-1">SCAN TO CHECK-IN</div>
                         <div class="h-0.5 w-12 bg-slate-200 mx-auto rounded-full"></div>
                     </div>
                 </div>
@@ -117,10 +117,21 @@
 </div>
 
 <!-- Libraries -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" nonce="{{ csp_nonce() }}"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" nonce="{{ csp_nonce() }}"></script>
 
 <script nonce="{{ csp_nonce() }}">
     document.addEventListener('DOMContentLoaded', function() {
+        const qrcodeContainer = document.getElementById("qrcode");
+        new QRCode(qrcodeContainer, {
+            text: "{{ verify_url }}",
+            width: 320,
+            height: 320,
+            colorDark : "#0f172a",
+            colorLight : "#f8fafc",
+            correctLevel : QRCode.CorrectLevel.H
+        });
+
         // High-Quality Badge Export
         document.getElementById('downloadBtn').addEventListener('click', async function() {
             const btn = this;

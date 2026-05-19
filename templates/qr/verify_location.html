@@ -325,13 +325,13 @@
                         }
                     }
                     
-                    await submitLocation(latitude, longitude, accuracy);
+                    await submitLocation(latitude, longitude);
                 },
                 async (error) => {
                     if (error.code === error.PERMISSION_DENIED) {
                         // Attempt IP-based verification fallback
                         setStatus('loading', 'GPS Denied', 'Attempting network-level verification...');
-                        await submitLocation(null, null, null);
+                        await submitLocation(null, null);
                     } else {
                         setStatus('error', 'GPS Error', 'Could not determine your location. Please check your GPS and turn it on, then try again.');
                     }
@@ -340,7 +340,7 @@
             );
         }
 
-        async function submitLocation(lat, lon, accuracy) {
+        async function submitLocation(lat, lon) {
             try {
                 const response = await fetch('/qr/api/submit-location', {
                     method: 'POST',
@@ -348,18 +348,12 @@
                         'Content-Type': 'application/json',
                         'X-CSRFToken': '{{ csrf_token() }}'
                     },
-                    body: JSON.stringify({ token, latitude: lat, longitude: lon, accuracy })
+                    body: JSON.stringify({ token, latitude: lat, longitude: lon })
                 });
                 const result = await response.json();
 
                 if (result.success) {
                     setStatus('success', 'Access Granted', 'Your location has been verified. Your login portal will now unlock.');
-                    // Inform server to mark this session as recently verified so check-in can skip re-check
-                    try {
-                        await fetch('{{ url_for("staff.mark_location_verified") }}', { method: 'POST', headers: { 'X-CSRFToken': '{{ csrf_token() }}' } });
-                    } catch (e) {
-                        console.warn('Could not mark session verification:', e);
-                    }
                 } else {
                     setStatus('error', 'Access Denied', result.message);
                 }

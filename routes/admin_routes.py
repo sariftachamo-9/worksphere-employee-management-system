@@ -9,9 +9,8 @@ from utils.id_generator import generate_staff_id
 from utils.email_service import send_notice_broadcast
 from werkzeug.security import generate_password_hash
 from utils.security_utils import validate_password_strength
+from utils.excel_sync import ExcelSyncService
 from utils.payroll_service import PayrollService
-from utils.attendance_event_utils import dedupe_attendance_by_date
-from utils.attendance_service import AttendanceService
 import re
 
 admin_bp = Blueprint('admin', __name__)
@@ -32,10 +31,6 @@ def admin_required(func):
             return redirect(url_for('staff.dashboard'))
         return func(*args, **kwargs)
     return wrapper
-
-def ensure_query_messages_table():
-    from database.models import QueryMessage
-    QueryMessage.__table__.create(bind=db.engine, checkfirst=True)
 
 @admin_bp.route('/generate-qr-login/<int:user_id>')
 @login_required
@@ -330,7 +325,6 @@ def update_query(query_id):
     reply = request.form.get('reply')
     if reply and reply.strip():
         from database.models import QueryMessage
-        ensure_query_messages_table()
         query.admin_reply = reply.strip() # Keep for legacy/UI convenience if needed
         admin_msg = QueryMessage(
             query_id=query.id,
@@ -348,10 +342,9 @@ def update_query(query_id):
 @admin_required
 def reply_query(query_id):
     from database.models import QueryMessage
-    ensure_query_messages_table()
     query = ContactQuery.query.get_or_404(query_id)
-    data = request.get_json(silent=True) or request.form
-    reply_text = (data.get('reply') or data.get('message') or data.get('acknowledgement') or '').strip()
+    data = request.get_json() or request.form
+    reply_text = data.get('reply')
     
     if not reply_text:
         if request.is_json:
@@ -366,7 +359,7 @@ def reply_query(query_id):
     admin_msg = QueryMessage(
         query_id=query.id,
         sender_type='admin',
-        message=reply_text
+        message=reply_text.strip()
     )
     db.session.add(admin_msg)
     db.session.commit()
@@ -450,98 +443,42 @@ def attendance():
     if dept:
         query = query.filter(EmployeeProfile.department == dept)
     if status and status != 'on_leave':
-        if status == 'holiday':
-            query = query.filter(db.or_(Attendance.status == 'holiday', Attendance.is_weekend == True))
-        else:
-            query = query.filter(Attendance.status == status)
-
+        query = query.filter(Attendance.status == status)
+        
     records = query.order_by(Attendance.check_in.desc()).all()
-    existing_user_ids = {r.user_id for r in records}
-    is_weekend = target_date.weekday() == 5
-
-    # Approved leaves covering the target day
-    leave_user_ids = set()
-    leaves = []
-    if not status or status in ['', 'on_leave', 'absent', 'holiday']:
+    
+    # Logic for Virtual Records (On Leave)
+    virtual_records = []
+    if not status or status == 'on_leave':
+        # Find approved leave requests that cover target_date
         leaves = LeaveRequest.query.filter(
             LeaveRequest.status == 'approved',
             LeaveRequest.start_date <= target_date,
             LeaveRequest.end_date >= target_date
         ).all()
-        leave_user_ids = {leave.user_id for leave in leaves}
-
-    virtual_records = []
-    if not status or status == 'on_leave':
-        # Find approved leave requests that cover target_date
+        
+        # Filter leaves by dept/search if needed
         for leave in leaves:
             user = leave.user
             profile = user.profile
-            if not profile:
-                continue
-
+            if not profile: continue
+            
+            # Match search/dept
             matches_search = not search or search.lower() in profile.full_name.lower() or search.lower() in profile.employee_id.lower()
             matches_dept = not dept or profile.department == dept
+            
+            if matches_search and matches_dept:
+                # Only if they DON'T have a real attendance record for this day
+                has_record = any(r.user_id == user.id for r in records)
+                if not has_record:
+                    virtual_records.append({
+                        'user': user,
+                        'is_virtual': True,
+                        'status': 'ON LEAVE',
+                        'leave_type': leave.leave_type
+                    })
 
-            if matches_search and matches_dept and user.id not in existing_user_ids:
-                virtual_records.append({
-                    'user': user,
-                    'is_virtual': True,
-                    'status': 'on_leave',
-                    'leave_type': leave.leave_type
-                })
-
-    if not status or status in ['', 'absent']:
-        if not is_weekend:
-            absent_users = User.query.filter(
-                User.is_active == True,
-                User.role != 'admin',
-                ~User.id.in_(existing_user_ids),
-                ~User.id.in_(leave_user_ids)
-            ).all()
-
-            for user in absent_users:
-                profile = user.profile
-                if not profile:
-                    continue
-                matches_search = not search or search.lower() in profile.full_name.lower() or search.lower() in profile.employee_id.lower()
-                matches_dept = not dept or profile.department == dept
-                if not (matches_search and matches_dept):
-                    continue
-
-                virtual_records.append({
-                    'user': user,
-                    'is_virtual': True,
-                    'status': 'absent',
-                    'check_in': datetime.combine(target_date, datetime.min.time()).replace(hour=12),
-                    'is_weekend': False
-                })
-
-    if not status or status in ['', 'holiday']:
-        if is_weekend:
-            holiday_users = User.query.filter(
-                User.is_active == True,
-                User.role != 'admin',
-                ~User.id.in_(existing_user_ids),
-                ~User.id.in_(leave_user_ids)
-            ).all()
-
-            for user in holiday_users:
-                profile = user.profile
-                if not profile:
-                    continue
-                matches_search = not search or search.lower() in profile.full_name.lower() or search.lower() in profile.employee_id.lower()
-                matches_dept = not dept or profile.department == dept
-                if not (matches_search and matches_dept):
-                    continue
-
-                virtual_records.append({
-                    'user': user,
-                    'is_virtual': True,
-                    'status': 'holiday',
-                    'check_in': datetime.combine(target_date, datetime.min.time()).replace(hour=12),
-                    'is_weekend': True
-                })
-
+    # If status is strictly 'on_leave', only show virtuals
     if status == 'on_leave':
         display_records = virtual_records
     else:
@@ -1126,7 +1063,6 @@ def office_settings():
             # Restart scheduler with new settings
             if hasattr(current_app, 'scheduler') and current_app.scheduler:
                 current_app.scheduler.restart()
-                current_app.scheduler._perform_auto_checkout()
             
             flash('Office settings updated successfully.', 'success')
         except ValueError as e:
@@ -1285,7 +1221,7 @@ def _internal_onboard_logic(request, role, target):
     # 1. Create User
     new_user = User(
         email=login_email,
-        password_hash=generate_password_hash(password, method='pbkdf2:sha256'),
+        password_hash=generate_password_hash(password),
         role=role
     )
     db.session.add(new_user)
@@ -1317,8 +1253,7 @@ def _internal_onboard_logic(request, role, target):
     db.session.add(new_profile)
     db.session.commit()
     
-    # Sync to Excel (lazy import to avoid heavy deps at app startup)
-    from utils.excel_sync import ExcelSyncService
+    # Sync to Excel
     ExcelSyncService.sync_role_to_excel(role)
     
     flash(f'Staff created successfully! ID: {staff_id}', 'success')
@@ -1393,7 +1328,6 @@ def edit_staff(user_id):
         db.session.commit()
         
         # Sync to Excel
-        from utils.excel_sync import ExcelSyncService
         ExcelSyncService.sync_role_to_excel(role)
         
         flash('Staff profile updated successfully.', 'success')
@@ -1417,7 +1351,7 @@ def reset_staff_password(user_id):
         flash('Cannot reset the password for an admin account from this tool.', 'danger')
         return redirect(url_for('admin.edit_staff', user_id=user_id))
 
-    user.password_hash = generate_password_hash(DEFAULT_USER_PASSWORD, method='pbkdf2:sha256')
+    user.password_hash = generate_password_hash(DEFAULT_USER_PASSWORD)
     user.otp = None
     user.otp_expiry = None
 
@@ -1453,7 +1387,6 @@ def delete_staff(user_id):
     db.session.commit()
     
     # Sync to Excel
-    from utils.excel_sync import ExcelSyncService
     ExcelSyncService.sync_role_to_excel(role)
     
     flash('Staff member deleted successfully.', 'success')
@@ -1500,7 +1433,6 @@ def complete_role(user_id):
     db.session.commit()
     
     # Sync to Excel
-    from utils.excel_sync import ExcelSyncService
     ExcelSyncService.sync_role_to_excel(user.role)
     
     flash(msg, 'success')
@@ -1537,40 +1469,17 @@ def get_stats():
     start_of_day = datetime.combine(today, datetime.min.time())
     end_of_day   = datetime.combine(today, datetime.max.time())
 
-    present_user_ids = {
-        user_id for (user_id,) in db.session.query(Attendance.user_id).filter(
-            Attendance.check_in >= start_of_day,
-            Attendance.check_in <= end_of_day,
-            ~Attendance.status.in_(['absent', 'holiday'])
-        ).distinct().all()
-    }
+    attendance_today = db.session.query(Attendance.user_id).filter(
+        Attendance.check_in >= start_of_day,
+        Attendance.check_in <= end_of_day
+    ).distinct().count()
 
-    holiday_user_ids = {
-        user_id for (user_id,) in db.session.query(Attendance.user_id).filter(
-            Attendance.check_in >= start_of_day,
-            Attendance.check_in <= end_of_day,
-            db.or_(Attendance.status == 'holiday', Attendance.is_weekend == True)
-        ).distinct().all()
-    }
-
-    leave_user_ids = {
-        user_id for (user_id,) in db.session.query(LeaveRequest.user_id).filter(
-            LeaveRequest.status == 'approved',
-            LeaveRequest.start_date <= today,
-            LeaveRequest.end_date >= today
-        ).distinct().all()
-    }
-
-    if today.weekday() == 5:
-        holiday_today = max(total_active - len(leave_user_ids), 0)
-        absent_today = 0
-        attendance_today = len(present_user_ids)
-    else:
-        accounted_ids = present_user_ids.union(holiday_user_ids, leave_user_ids)
-        absent_today = max(total_active - len(accounted_ids), 0)
-        holiday_today = len(holiday_user_ids)
-        attendance_today = len(present_user_ids)
-
+    # Absent today = explicitly marked absent in attendance table
+    absent_today = db.session.query(Attendance.user_id).filter(
+        Attendance.check_in >= start_of_day,
+        Attendance.check_in <= end_of_day,
+        Attendance.status == 'absent'
+    ).distinct().count()
     attendance_rate = round((attendance_today / total_active * 100), 1) if total_active > 0 else 0.0
 
     # ── 3. Leaves ──────────────────────────────────────────────────────────────
@@ -1642,8 +1551,7 @@ def get_stats():
         recent_activity.append({
             'action':  log.action,
             'actor':   actor_name,
-            # Use 12-hour format with AM/PM for display
-            'time':    log.timestamp.strftime('%d %b, %I:%M %p') if log.timestamp else '—',
+            'time':    log.timestamp.strftime('%d %b, %H:%M') if log.timestamp else '—',
             'ip':      log.ip_address or '—'
         })
 
@@ -1688,7 +1596,6 @@ def get_stats():
         # Attendance
         'attendance_today':     attendance_today,
         'absent_today':         absent_today,
-        'holiday_today':        holiday_today,
         'attendance_rate':      attendance_rate,
         # Leaves
         'pending_leaves':       pending_leaves,
@@ -1751,67 +1658,23 @@ def dashboard_details():
     elif detail_type == 'present':
         attendance_user_ids = db.session.query(Attendance.user_id).filter(
             Attendance.check_in >= start_of_day,
-            Attendance.check_in <= end_of_day,
-            ~Attendance.status.in_(['absent', 'holiday'])
+            Attendance.check_in <= end_of_day
         )
         users = User.query.filter(User.id.in_(attendance_user_ids)).all()
+    elif detail_type == 'absent':
+        absent_user_ids = db.session.query(Attendance.user_id).filter(
+            Attendance.check_in >= start_of_day,
+            Attendance.check_in <= end_of_day,
+            Attendance.status == 'absent'
+        )
+        users = User.query.filter(User.id.in_(absent_user_ids)).all()
     elif detail_type == 'leave':
         leave_user_ids = db.session.query(LeaveRequest.user_id).filter(
             LeaveRequest.status == 'approved',
             LeaveRequest.start_date <= today,
             LeaveRequest.end_date >= today
-        ).distinct()
+        )
         users = User.query.filter(User.id.in_(leave_user_ids)).all()
-    elif detail_type == 'absent':
-        active_user_ids = {
-            user.id for user in User.query.filter(User.is_active == True, User.role != 'admin').all()
-        }
-        leave_user_ids = {
-            user_id for (user_id,) in db.session.query(LeaveRequest.user_id).filter(
-                LeaveRequest.status == 'approved',
-                LeaveRequest.start_date <= today,
-                LeaveRequest.end_date >= today
-            ).distinct().all()
-        }
-        present_user_ids = {
-            user_id for (user_id,) in db.session.query(Attendance.user_id).filter(
-                Attendance.check_in >= start_of_day,
-                Attendance.check_in <= end_of_day,
-                ~Attendance.status.in_(['absent', 'holiday'])
-            ).distinct().all()
-        }
-        holiday_user_ids = {
-            user_id for (user_id,) in db.session.query(Attendance.user_id).filter(
-                Attendance.check_in >= start_of_day,
-                Attendance.check_in <= end_of_day,
-                db.or_(Attendance.status == 'holiday', Attendance.is_weekend == True)
-            ).distinct().all()
-        }
-        absent_user_ids = active_user_ids - present_user_ids - holiday_user_ids - leave_user_ids
-        if today.weekday() == 5:
-            absent_user_ids = set()
-        users = User.query.filter(User.id.in_(absent_user_ids)).all()
-    elif detail_type == 'holiday':
-        leave_user_ids = {
-            user_id for (user_id,) in db.session.query(LeaveRequest.user_id).filter(
-                LeaveRequest.status == 'approved',
-                LeaveRequest.start_date <= today,
-                LeaveRequest.end_date >= today
-            ).distinct().all()
-        }
-        if today.weekday() == 5:
-            holiday_user_ids = {
-                user.id for user in User.query.filter(User.is_active == True, User.role != 'admin').filter(~User.id.in_(leave_user_ids)).all()
-            }
-        else:
-            holiday_user_ids = {
-                user_id for (user_id,) in db.session.query(Attendance.user_id).filter(
-                    Attendance.check_in >= start_of_day,
-                    Attendance.check_in <= end_of_day,
-                    db.or_(Attendance.status == 'holiday', Attendance.is_weekend == True)
-                ).distinct().all()
-            }
-        users = User.query.filter(User.id.in_(holiday_user_ids)).all()
     elif detail_type == 'joinings':
         users = User.query.join(EmployeeProfile).filter(
             db.extract('month', EmployeeProfile.joining_date) == today.month,
@@ -1899,7 +1762,7 @@ def staff_attendance_events(user_id):
         except (ValueError, TypeError):
             pass
                              
-    attendances = dedupe_attendance_by_date(query.all())
+    attendances = query.all()
     
     for att in attendances:
         color = '#10b981' # Green (present by default)
@@ -1915,11 +1778,12 @@ def staff_attendance_events(user_id):
             
         # Add Time Information to Title
         if att.check_in and att.status not in ['absent', 'holiday', 'weekend']:
-            # Use consistent 12-hour formatting across admin calendar titles
-            time_str = att.check_in.strftime('%I:%M %p')
+            time_str = att.check_in.strftime('%H:%M')
             if att.check_out:
-                time_str += f" - {att.check_out.strftime('%I:%M %p')}"
-            title = f"{title} - {time_str}"
+                time_str += f" - {att.check_out.strftime('%H:%M')}"
+            else:
+                time_str += " - ..."
+            title = f"{title} ({time_str})"
             
         event = {
             'id': f'att_{att.id}',
@@ -1990,7 +1854,6 @@ def reactivate_staff(user_id):
     ))
     db.session.commit()
 
-    from utils.excel_sync import ExcelSyncService
     ExcelSyncService.sync_role_to_excel(user.role)
 
     flash(f'Account for {profile.full_name if profile else user.email} has been reactivated.', 'success')
@@ -2023,16 +1886,16 @@ def approve_overtime(request_id):
     ot_request.status = 'approved'
     ot_request.approved_by = current_user.id
     ot_request.approved_at = get_nepal_time()
-
+    
     if ot_request.overtime_type == 'remote':
         user = ot_request.user
         login_time = get_nepal_time()
         bypass_end = login_time + timedelta(hours=ot_request.hours)
         user.overtime_bypass_until = bypass_end
-
+        
         notice = Notice(
             title="Overtime Request Approved - Location Bypass Activated",
-            content=f"Your remote overtime request for {ot_request.hours} hours has been approved. Location bypass is active from {login_time.strftime('%I:%M %p %d %b')} until {bypass_end.strftime('%I:%M %p %d %b')}.",
+            content=f"Your remote overtime request for {ot_request.hours} hours has been approved. Location bypass is active from {login_time.strftime('%H:%M %d %b')} until {bypass_end.strftime('%H:%M %d %b')}.",
             target_user_id=user.id,
             is_active=True,
             notice_type="System Alert"
@@ -2099,7 +1962,7 @@ def grant_location_bypass():
         bypass_text = "until manually revoked"
     else:
         user.location_bypass_until = get_nepal_time() + timedelta(hours=hours)
-        bypass_text = user.location_bypass_until.strftime('%I:%M %p %d %b')
+        bypass_text = user.location_bypass_until.strftime('%H:%M %d %b')
     
     notice = Notice(
         title="Location Bypass Granted",

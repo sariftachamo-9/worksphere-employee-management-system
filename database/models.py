@@ -224,8 +224,8 @@ class Notice(db.Model):
 class OfficeSettings(db.Model):
     __tablename__ = 'office_settings'
     id = db.Column(db.Integer, primary_key=True)
-    latitude = db.Column(db.Float, default=27.704073)
-    longitude = db.Column(db.Float, default=85.331842)
+    latitude = db.Column(db.Float, default=27.7172)
+    longitude = db.Column(db.Float, default=85.3240)
     radius = db.Column(db.Integer, default=100)
     office_ip = db.Column(db.String(45))
     auto_checkout_enabled = db.Column(db.Boolean, default=True)
@@ -264,16 +264,16 @@ class LoginToken(db.Model):
     is_viewed = db.Column(db.Boolean, default=False)             # One-time view protection
 
 class BadgeQRToken(db.Model):
-    """Fixed QR token for the employee security badge.
-    Valid until an admin revokes it. Can be scanned multiple times.
+    """Persistent, long-lived QR token for the employee security badge.
+    Valid for 6 months. Can be scanned multiple times (not one-time-use).
     """
     __tablename__ = 'badge_qr_tokens'
     id         = db.Column(db.Integer, primary_key=True)
     user_id    = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     token      = db.Column(db.String(64), unique=True, nullable=False, index=True)
     created_at = db.Column(db.DateTime, default=get_nepal_time)
-    expires_at = db.Column(db.DateTime, nullable=False)  # Kept for legacy DB compatibility
-    is_revoked = db.Column(db.Boolean, default=False)    # Admin can revoke to rotate the badge
+    expires_at = db.Column(db.DateTime, nullable=False)  # created_at + 6 months
+    is_revoked = db.Column(db.Boolean, default=False)    # Admin can revoke early
 
     user = db.relationship('User', backref=db.backref('badge_tokens', lazy='dynamic', cascade='all, delete-orphan'))
 

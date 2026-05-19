@@ -13,7 +13,7 @@ with app.app_context():
         print("Recreating CORRECT Ngawang...")
         new_user = User(
             email=correct_email,
-            password_hash=generate_password_hash('password123', method='pbkdf2:sha256'),
+            password_hash=generate_password_hash('password123'),
             role='employee',
             is_active=True
         )

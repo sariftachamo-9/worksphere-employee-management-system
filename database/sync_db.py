@@ -37,26 +37,6 @@ try:
         except sqlite3.OperationalError:
             print(f"{col_name} already exists in contact_queries")
 
-    try:
-        cursor.execute("ALTER TABLE contact_queries ADD COLUMN admin_reply TEXT")
-        print("Added admin_reply to contact_queries")
-    except sqlite3.OperationalError:
-        print("admin_reply already exists in contact_queries")
-
-    try:
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS query_messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                query_id INTEGER NOT NULL,
-                sender_type VARCHAR(20) NOT NULL,
-                message TEXT NOT NULL,
-                timestamp TIMESTAMP,
-                FOREIGN KEY(query_id) REFERENCES contact_queries(id)
-            )
-        """)
-        print("Ensured query_messages table exists")
-    except sqlite3.OperationalError as e:
-        print(f"Error creating query_messages table: {e}")
 
     # Add new fields to employee_profiles
     profile_cols = [

@@ -12,9 +12,105 @@
         --dash-bg: #f8fafc;
     }
 
+    /* Skeleton Loading Animation */
     @keyframes skeleton-shimmer {
         0% { background-position: -200% 0; }
         100% { background-position: 200% 0; }
+    }
+    .shimmer {
+        background: linear-gradient(90deg, #f1f5f9 25%, #f8fafc 50%, #f1f5f9 75%);
+        background-size: 200% 100%;
+        animation: skeleton-shimmer 1.5s infinite linear;
+    }
+
+    /* Modern Calendar Styling */
+    .fc { font-family: 'Inter', sans-serif; border: none !important; }
+    .fc-theme-standard td, .fc-theme-standard th { border-color: #f1f5f9 !important; }
+    .fc-col-header-cell { background: transparent; padding: 20px 0 !important; border: none !important; }
+    .fc-col-header-cell-cushion { 
+        font-size: 11px; font-weight: 800; color: #94a3b8; 
+        text-transform: uppercase; letter-spacing: 0.15em; 
+    }
+    .fc-daygrid-day-number { font-size: 14px; font-weight: 700; color: #cbd5e1; padding: 12px !important; }
+    .fc-day-today { background: rgba(249, 115, 22, 0.03) !important; }
+    .fc-daygrid-day:hover { background: #f8fafc; cursor: pointer; }
+    
+    /* Saturday Legend */
+    .saturday-holiday { background-color: #eff6ff !important; position: relative; }
+    .saturday-holiday::after {
+        content: 'HOLIDAY';
+        position: absolute; bottom: 8px; right: 8px;
+        font-size: 9px; font-weight: 900; color: #2563eb;
+        letter-spacing: 0.05em;
+    }
+
+    /* Custom Transitions */
+    .hover-lift { transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+    .hover-lift:hover { transform: translateY(-4px); }
+
+    /* Custom scrollbar */
+    .notice-scroll::-webkit-scrollbar { width: 4px; }
+    .notice-scroll::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+
+    /* Mobile Responsiveness for FullCalendar Header */
+    @media (max-width: 768px) {
+        .fc-header-toolbar {
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 10px;
+            align-items: center !important;
+        }
+        .fc-toolbar-chunk {
+            display: flex;
+            justify-content: center;
+            width: 100%;
+        }
+        .fc-toolbar-title {
+            font-size: 1.25rem !important;
+            text-align: center;
+        }
+        .fc-button {
+            padding: 0.4rem 0.6rem !important;
+            font-size: 10px !important;
+        }
+    }
+
+    /* Container Adjustments on Mobile */
+    @media (max-width: 640px) {
+        .min-h-screen {
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
+            padding-top: 1.5rem !important;
+        }
+        .max-w-\[1500px\] {
+            gap: 1.5rem !important;
+        }
+        .grid {
+            gap: 1rem !important;
+        }
+    }
+
+    /* Notice Popup Animation */
+    @keyframes notice-slip-fade {
+        0% { transform: translateY(-20px); opacity: 0; }
+        5% { transform: translateY(0); opacity: 1; }
+        95% { transform: translateY(0); opacity: 1; }
+        100% { transform: translateY(-20px); opacity: 0; }
+    }
+    .notice-popup { animation: notice-slip-fade 4s ease-in-out forwards; }
+
+    /* Premium List View (Option 1) Styling */
+    .fc-list-day-cushion {
+        background: #f8fafc !important;
+        padding: 15px 25px !important;
+    }
+    .fc-list-day-text {
+        font-family: 'Outfit', sans-serif;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: #64748b;
+        font-size: 11px;
     }
     .fc-list-event {
         background: white !important;
@@ -26,14 +122,6 @@
         background: #fdfdfd !important;
         transform: translateX(4px);
     }
-    .fc-list-event,
-    .fc-list-event-main-frame {
-        flex-wrap: wrap;
-    }
-    .fc-list-event-main,
-    .fc-list-event-main-frame {
-        min-width: 0;
-    }
     .fc-list-event-dot {
         border-width: 5px !important;
         margin-right: 15px !important;
@@ -43,20 +131,12 @@
         color: #1e293b !important;
         font-size: 14px !important;
         padding: 18px 0 !important;
-        white-space: normal !important;
-        word-wrap: break-word;
-        overflow-wrap: break-word;
-        max-width: 100%;
     }
     .fc-list-event-time {
         font-family: 'Space Mono', monospace;
         font-weight: 700;
         color: #94a3b8 !important;
         font-size: 12px !important;
-        white-space: normal !important;
-        word-wrap: break-word;
-        overflow-wrap: break-word;
-        max-width: 100%;
     }
     .fc-list-empty {
         padding: 50px 0 !important;
@@ -66,24 +146,6 @@
         text-transform: uppercase;
         letter-spacing: 0.1em;
         font-size: 11px;
-    }
-
-    /* Fixed UI Overflow for Calendar Cells */
-    .fc-event {
-        white-space: normal !important;
-        word-break: break-word !important;
-        padding: 4px 8px !important;
-        border-radius: 8px !important;
-        border: none !important;
-    }
-    .fc-event-title {
-        font-size: 11px !important;
-        font-weight: 800 !important;
-        line-height: 1.2 !important;
-    }
-    .fc-daygrid-event {
-        margin-top: 4px !important;
-        margin-bottom: 4px !important;
     }
 </style>
 
@@ -104,11 +166,6 @@
      data-checkout-url="{{ url_for('staff.check_out') }}"
      data-break-start-url="{{ url_for('staff.start_break') }}"
      data-break-end-url="{{ url_for('staff.end_break') }}"
-     data-active-ot-id="{{ active_overtime.id if active_overtime else '' }}"
-     data-active-ot-hours="{{ active_overtime.hours if active_overtime else '' }}"
-     data-active-ot-start="{{ active_overtime.actual_start_time.isoformat() if active_overtime and active_overtime.actual_start_time else '' }}"
-     data-active-ot-end="{{ active_overtime_end.isoformat() if active_overtime_end else '' }}"
-     data-active-ot-remaining="{{ active_overtime_remaining if active_overtime else 0 }}"
      data-initial-score="{{ initial_stats.attendance_score }}"
      data-initial-leaves="{{ initial_stats.leave_balance }}"
      data-initial-workshop="{{ initial_stats.workshop_status }}"
@@ -302,18 +359,15 @@
                         </template>
                     </div>
                 </div>
-                <p class="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-1" x-text="isEmployee ? 'Monthly Base' : 'Program Milestone'">Stat</p>
+                <p class="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-1" x-text="isEmployee ? 'Monthly Base Salary' : 'Program Milestone'">Stat</p>
                 <div class="flex items-baseline space-x-1">
                     <template x-if="isEmployee">
-                        <span class="text-3xl font-black text-slate-900 tracking-tighter">Rs.<span x-text="(parseFloat(baseSalary) / 12).toLocaleString('en-IN', {maximumFractionDigits: 0})">0</span></span>
+                        <span class="text-3xl font-black text-slate-900 tracking-tighter">Rs.<span x-text="baseSalary">0</span></span>
                     </template>
                     <template x-if="!isEmployee">
                         <span class="text-3xl font-black text-slate-900 tracking-tighter" x-text="milestoneLabel">Ongoing</span>
                     </template>
                 </div>
-                <template x-if="isEmployee && payroll.absent_days">
-                    <p class="text-[9px] text-rose-500 font-bold mt-2" x-text="'Deductions: Rs.' + (payroll.absent_deduction + payroll.leave_deduction).toFixed(2)"></p>
-                </template>
             </div>
 
             <!-- OVERTIME / STATUS (Dynamic 4th Column) -->
@@ -324,9 +378,10 @@
                             <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                         </div>
                     </div>
-                    <p class="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-1">Overtime Per Hour</p>
+                    <p class="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-1">Estimated Overtime</p>
                     <div class="flex items-baseline space-x-2">
-                        <span class="text-3xl font-black text-slate-900 tracking-tighter" x-text="'Rs.' + parseFloat(otRate).toFixed(2)">Rs.0</span>
+                        <span class="text-3xl font-black text-slate-900 tracking-tighter" x-text="'Rs.' + estimatedOT">Rs.0</span>
+                        <span class="text-[10px] font-bold text-amber-600/60" x-text="'Rate: Rs.' + otRate + '/hr'"></span>
                     </div>
                 </div>
             </template>
@@ -400,12 +455,12 @@
                     <!-- Badge Info -->
                     <div class="grid grid-cols-2 gap-4 mb-8">
                         <div class="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-left">
-                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Validity</p>
+                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Expires On</p>
                             <p class="text-sm font-black text-slate-800" x-text="badgeExpiry || '—'">—</p>
                         </div>
                         <div class="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-left">
-                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Badge Type</p>
-                            <p class="text-sm font-black text-emerald-500">Fixed</p>
+                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Refresh In</p>
+                            <p class="text-sm font-black" :class="badgeDaysLeft < 30 ? 'text-amber-500' : 'text-emerald-500'" x-text="badgeDaysLeft !== null ? badgeDaysLeft + ' days' : '—'">—</p>
                         </div>
                     </div>
 
@@ -493,7 +548,7 @@ function dashboardUI() {
         badgeExpired: false,
         attendanceScore: bridge.initialScore || '0',
         leaveBalance: bridge.initialLeaves || '0',
-        baseSalary: parseFloat(bridge.baseSalary || 0),
+        baseSalary: parseFloat(bridge.baseSalary || 0).toLocaleString(),
         milestoneLabel: bridge.initialWorkshop || '...',
         workshopStatus: bridge.initialWorkshop || 'Ongoing',
         paymentStatus: bridge.initialPayment || 'Pending',
@@ -509,63 +564,22 @@ function dashboardUI() {
         otRemainingSeconds: 0,
         otWarningShown: false,
         otTimer: null,
-        otEndTime: null,
         otTimerFormatted: '00:00:00',
         meta: bridge,
 
-        payroll: {},
         init() {
             this.initSession();
             this.fetchStats();
-            this.fetchPayroll();
             this.checkInProgressOT();
-            this.syncQueuedCheckIns();
             this.$nextTick(() => this.initCalendar());
-            window.addEventListener('online', () => this.syncQueuedCheckIns());
             setInterval(() => this.fetchStats(), 60000);
-            setInterval(() => this.fetchPayroll(), 30000);
-        },
-        
-        async syncQueuedCheckIns() {
-            if (!navigator.onLine) return;
-            const queue = JSON.parse(localStorage.getItem('ems_checkin_queue') || '[]');
-            if (queue.length === 0) return;
-
-            console.log('Syncing queued actions...', queue);
-            for (const item of queue) {
-                try {
-                    const r = await fetch(item.url, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': bridge.csrf },
-                        body: JSON.stringify(item.body)
-                    });
-                    const d = await r.json();
-                    if (d.success) console.log(`Queued action ${item.type} synced.`);
-                } catch(e) { console.error('Failed to sync queued action', e); }
-            }
-            localStorage.removeItem('ems_checkin_queue');
-            if (window.showToast) window.showToast('✅ Offline records synchronized.', 'success');
-            setTimeout(() => location.reload(), 1000);
-        },
-
-        queueOfflineCheckIn(type, url, body) {
-            const queue = JSON.parse(localStorage.getItem('ems_checkin_queue') || '[]');
-            queue.push({ type, url, body, timestamp: new Date().toISOString() });
-            localStorage.setItem('ems_checkin_queue', JSON.stringify(queue));
-            
-            window.showToast('📡 You are offline. Action saved locally and will sync when online.', 'warning');
-            
-            // Optimistic UI update
-            if (type === 'checkin') { this.checkedIn = true; this.checkInTime = new Date(); this.startTimer(); }
-            if (type === 'checkout') { this.shiftCompleted = true; this.checkedIn = false; }
         },
 
         checkInProgressOT() {
-            if (bridge.activeOtId && parseInt(bridge.activeOtRemaining || '0', 10) > 0) {
-                this.startOTTimer(
-                    parseInt(bridge.activeOtRemaining || '0', 10),
-                    bridge.activeOtEnd ? new Date(bridge.activeOtEnd + bridge.tzOffset) : null
-                );
+            // Check if OT was already active from session/server
+            if (window.location.search.includes('ot_active')) {
+                // Fallback for immediate refresh after start
+                this.overtimeActive = true;
             }
         },
         initSession() {
@@ -603,16 +617,6 @@ function dashboardUI() {
                 this.milestoneLabel = d.workshop_status || 'Ongoing';
             } catch(e) { console.error('Stats fetch failed', e); }
         },
-        async fetchPayroll() {
-            if (!this.isEmployee) return;
-            try {
-                const r = await fetch('/staff/api/payroll');
-                if (r.ok) {
-                    const d = await r.json();
-                    this.payroll = d;
-                }
-            } catch(e) { console.error('Payroll fetch failed', e); }
-        },
         async openBadge() {
             this.showBadgeModal = true;
             if (!this.qrRendered) {
@@ -627,7 +631,7 @@ function dashboardUI() {
                 this.badgeUrl = d.badge_url;
                 this.badgeExpiry = d.expires_at;
                 this.badgeDaysLeft = d.days_until_refresh;
-                this.badgeExpired = false;
+                this.badgeExpired = d.days_until_refresh <= 0;
 
                 const canvas = document.getElementById('modal-qr-canvas');
                 if (canvas) {
@@ -655,51 +659,24 @@ function dashboardUI() {
             };
             if (type === 'checkout' && !confirm('Submit shift for review?')) return;
             this.loading = true;
-
-            const body = { client_timestamp: new Date().toISOString() };
-
-            if (type === 'checkin') {
-                try {
-                    const loc = await window.getCheckInLocation();
-                    body.latitude = loc.latitude;
-                    body.longitude = loc.longitude;
-                    body.accuracy = loc.accuracy;
-                } catch (e) {
-                    if (window.showToast) {
-                        window.showToast(e.message || 'Location access is required for check-in.', 'error', 5000);
-                    }
-                    this.loading = false;
-                    return;
-                }
-            }
-
-            if (!navigator.onLine) {
-                this.queueOfflineCheckIn(type, urlMap[type], body);
-                this.loading = false;
-                return;
-            }
-
             try {
                 const r = await fetch(urlMap[type], {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'X-CSRFToken': bridge.csrf },
-                    body: JSON.stringify(body)
+                    body: JSON.stringify({})
                 });
                 const d = await r.json();
                 if (d.success) { window.showToast(d.message, 'success'); setTimeout(() => location.reload(), 1000); }
                 else { window.showToast(d.message, 'error'); this.loading = false; }
-            } catch(e) {
-                this.queueOfflineCheckIn(type, urlMap[type], body);
-                this.loading = false;
-            }
+            } catch(e) { this.loading = false; window.showToast('Network error', 'error'); }
         },
         startTimer() {
             const update = () => {
                 const diff = Math.floor((new Date() - this.checkInTime) / 1000);
                 const h = Math.floor(diff/3600), m = Math.floor((diff%3600)/60), s = diff%60;
                 this.shiftTimer = [h, m, s].map(v=>v<10?'0'+v:v).join(':');
-                if (this.isEmployee && !this.estimatedOT) {
-                    this.estimatedOT = parseFloat(this.otRate).toFixed(2);
+                if (this.isEmployee && diff > 28800) {
+                    this.estimatedOT = Math.floor((diff-28800)/3600 * this.otRate).toLocaleString();
                 }
             };
             update(); setInterval(update, 1000);
@@ -710,22 +687,14 @@ function dashboardUI() {
             this.shiftTimer = [h, m, s].map(v=>v<10?'0'+v:v).join(':');
         },
 
-        startOTTimer(seconds, endTime = null) {
+        startOTTimer(seconds) {
             this.overtimeActive = true;
-            this.otPlannedSeconds = seconds;
-            this.otEndTime = endTime;
-            this.otRemainingSeconds = Math.max(0, seconds);
-            if (this.otTimer) clearInterval(this.otTimer);
+            this.otRemainingSeconds = seconds;
             this.otTimer = setInterval(() => {
-                if (this.otEndTime) {
-                    this.otRemainingSeconds = Math.max(0, Math.floor((this.otEndTime - new Date()) / 1000));
-                } else {
-                    this.otRemainingSeconds = Math.max(0, this.otRemainingSeconds - 1);
-                }
+                this.otRemainingSeconds--;
                 if (this.otRemainingSeconds <= 0) {
                     clearInterval(this.otTimer);
                     this.finishOT();
-                    return;
                 }
                 
                 // 15 Minute Warning
@@ -740,10 +709,9 @@ function dashboardUI() {
         },
 
         updateOTTimerUI() {
-            const remaining = Math.max(0, this.otRemainingSeconds);
-            const h = Math.floor(remaining / 3600);
-            const m = Math.floor((remaining % 3600) / 60);
-            const s = remaining % 60;
+            const h = Math.floor(this.otRemainingSeconds / 3600);
+            const m = Math.floor((this.otRemainingSeconds % 3600) / 60);
+            const s = this.otRemainingSeconds % 60;
             this.otTimerFormatted = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
         },
 
@@ -756,10 +724,7 @@ function dashboardUI() {
                 this.loading = false;
                 if (d.success) {
                     if (window.showToast) window.showToast('Overtime Session Started', 'success');
-                    this.startOTTimer(
-                        parseInt(d.remaining_seconds || (d.planned_hours * 3600), 10),
-                        d.end_time ? new Date(d.end_time + this.meta.tzOffset) : null
-                    );
+                    this.startOTTimer(d.planned_hours * 3600);
                 } else {
                     if (window.showToast) window.showToast(d.message, 'error');
                 }
@@ -786,8 +751,6 @@ function dashboardUI() {
                     right: isMob ? 'listMonth' : 'dayGridMonth,listMonth' 
                 },
                 events: bridge.eventsUrl,
-                // backend includes formatted time in event title; avoid duplicate rendering
-                displayEventTime: false,
                 eventTimeFormat: { hour: 'numeric', minute: '2-digit', meridiem: 'short' },
                 height: 'auto',
                 listDayFormat: { weekday: 'long', day: 'numeric', month: 'short' },

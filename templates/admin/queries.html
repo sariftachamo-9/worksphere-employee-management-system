@@ -45,7 +45,7 @@
                         <div>
                             <span class="text-[10px] font-black uppercase tracking-widest text-slate-400">{{ query.category }}</span>
                             <h5 class="text-md font-bold text-slate-800 mt-1">{{ query.subject or 'Support Ticket' }}</h5>
-                            <p class="text-xs text-slate-400 mt-1">Created: {{ query.created_at.strftime('%Y-%m-%d %I:%M %p') }}</p>
+                            <p class="text-xs text-slate-400 mt-1">Created: {{ query.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
                         </div>
                         <div class="flex items-center space-x-2">
                             <span class="px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest bg-orange-50 text-orange-600 border border-orange-100">{{ query.priority }}</span>
@@ -64,7 +64,7 @@
                         <div class="flex flex-col {% if msg.sender_type == 'admin' %}items-end{% else %}items-start{% endif %}">
                             <div class="max-w-[80%] rounded-2xl p-4 {% if msg.sender_type == 'admin' %}bg-indigo-600 text-white rounded-tr-none{% else %}bg-slate-100 text-slate-800 rounded-tl-none{% endif %}">
                                 <p class="text-sm">{{ msg.message }}</p>
-                                <p class="text-[9px] font-medium opacity-70 mt-2 text-right">{{ msg.timestamp.strftime('%b %d, %I:%M %p') }}</p>
+                                <p class="text-[9px] font-medium opacity-70 mt-2 text-right">{{ msg.timestamp.strftime('%b %d, %H:%M') }}</p>
                             </div>
                         </div>
                         {% else %}

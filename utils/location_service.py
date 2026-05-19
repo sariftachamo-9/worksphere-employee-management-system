@@ -31,7 +31,7 @@ def generate_location_token():
     db.session.commit()
     return token
 
-def verify_token_location(token, lat, lon, accuracy=None):
+def verify_token_location(token, lat, lon):
     """Verifies GPS location against office coordinates and updates DB status."""
     # Cleanup expired tokens
     cleanup_tokens()
@@ -41,7 +41,7 @@ def verify_token_location(token, lat, lon, accuracy=None):
         return False, "Invalid or expired verification session."
     
     from utils.location_utils import verify_location_access
-    is_allowed, msg, dist = verify_location_access(lat, lon, accuracy)
+    is_allowed, msg, dist = verify_location_access(lat, lon)
     
     if is_allowed:
         v_token.status = 'verified'

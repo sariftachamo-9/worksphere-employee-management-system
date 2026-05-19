@@ -1,20 +1,10 @@
 import os
 import sys
-import faulthandler
-import subprocess
-import time
-import json
-import urllib.request
-import re
 from app import create_app
-
-# Enable faulthandler early to capture native crashes and Python tracebacks
-faulthandler.enable(all_threads=True)
 
 def run_dev():
     # Set the Flask environment
     os.environ['FLASK_ENV'] = 'development'
-    os.environ['EMS_SINGLE_PROCESS'] = '1'
     
     port = 5000
 
@@ -35,10 +25,9 @@ def run_dev():
                             subprocess.run(['taskkill', '/F', '/PID', pid], capture_output=True)
                             print(f"\033[93m[CLEANUP] Killed process {pid} listening on port {port}\033[0m")
             else:
-                # Linux/macOS: Use fuser and pkill
+                # Linux/macOS: Use fuser
                 subprocess.run(['fuser', '-k', f'{port}/tcp'], capture_output=True)
-                subprocess.run(['pkill', 'ngrok'], capture_output=True)
-                print(f"[CLEANUP] Cleaning up port {port} and existing ngrok processes...")
+                print(f"[CLEANUP] Cleaning up port {port}...")
         except Exception as e:
             # Silent fail if cleanup fails (e.g. no process found)
             pass
@@ -50,25 +39,42 @@ def run_dev():
     # ONLY start ngrok in the main process, not the reloader child
     if os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
         try:
-            from pyngrok import ngrok
+            from pyngrok import ngrok, conf
             from dotenv import load_dotenv
             
-            load_dotenv()
+            load_dotenv() # Ensure .env is loaded so NGROK_AUTHTOKEN is available
             
-            print(f"[INFO] Starting ngrok on port {port}...", flush=True)
-            # Connect to ngrok
-            public_url = ngrok.connect(port).public_url
+            # Configure pyngrok to use the manually downloaded binary
+            ngrok_bin = "ngrok.exe" if os.name == 'nt' else "ngrok"
+            # Try both .venv/bin (as seen in this workspace) and .venv/Scripts (standard Windows)
+            ngrok_path = os.path.join(".venv", "bin", ngrok_bin)
+            if not os.path.exists(ngrok_path):
+                ngrok_path = os.path.join(".venv", "Scripts", ngrok_bin)
+                
+            pyngrok_config = conf.PyngrokConfig(ngrok_path=ngrok_path)
+            
+            # Open a ngrok tunnel to the dev server
+            connect_kwargs = {"pyngrok_config": pyngrok_config}
+            if os.environ.get('NGROK_DOMAIN'):
+                connect_kwargs["domain"] = os.environ.get('NGROK_DOMAIN')
+                
+            tunnel = ngrok.connect(port, **connect_kwargs)
+            public_url = tunnel.public_url
             os.environ['EXTERNAL_URL'] = public_url
-            # Print with green color highlight
-            print(f"\033[92m[INFO] Ngrok public URL: {public_url}\033[0m", flush=True)
+            
+            print("\n" + "="*50)
+            print("EMS Development Server with Ngrok")
+            print(f"Localhost URL: \033[94mhttp://127.0.0.1:{port}\033[0m")
+            print(f"Ngrok Public URL: \033[92m{public_url}\033[0m")
+            print("="*50 + "\n")
+            
         except ImportError:
-            print("[INFO] pyngrok not installed. Install it with 'pip install pyngrok' for public tunnel.", flush=True)
+            print("\n[INFO] pyngrok not installed. Running without public tunnel.")
         except Exception as e:
-            print(f"[WARNING] Error with ngrok: {e}", flush=True)
+            print(f"\n[WARNING] Could not start ngrok: {e}")
     
     # Start the app
-    # Run without the Werkzeug reloader/debugger to avoid multiprocessing native crashes
-    app.run(host='127.0.0.1', port=port, debug=False)
+    app.run(host='127.0.0.1', port=port, debug=True)
 
 if __name__ == '__main__':
     run_dev()

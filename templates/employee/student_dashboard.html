@@ -87,14 +87,6 @@
         background: #fdfdfd !important;
         transform: translateX(4px);
     }
-    .fc-list-event,
-    .fc-list-event-main-frame {
-        flex-wrap: wrap;
-    }
-    .fc-list-event-main,
-    .fc-list-event-main-frame {
-        min-width: 0;
-    }
     .fc-list-event-dot {
         border-width: 5px !important;
         margin-right: 15px !important;
@@ -105,20 +97,12 @@
         color: #1e293b !important;
         font-size: 14px !important;
         padding: 18px 0 !important;
-        white-space: normal !important;
-        word-wrap: break-word;
-        overflow-wrap: break-word;
-        max-width: 100%;
     }
     .fc-list-event-time {
         font-family: 'Space Mono', monospace;
         font-weight: 700;
         color: #94a3b8 !important;
         font-size: 12px !important;
-        white-space: normal !important;
-        word-wrap: break-word;
-        overflow-wrap: break-word;
-        max-width: 100%;
     }
     .fc-list-empty {
         padding: 50px 0 !important;
@@ -128,24 +112,6 @@
         text-transform: uppercase;
         letter-spacing: 0.1em;
         font-size: 11px;
-    }
-
-    /* Fixed UI Overflow for Calendar Cells */
-    .fc-event {
-        white-space: normal !important;
-        word-break: break-word !important;
-        padding: 4px 8px !important;
-        border-radius: 8px !important;
-        border: none !important;
-    }
-    .fc-event-title {
-        font-size: 11px !important;
-        font-weight: 800 !important;
-        line-height: 1.2 !important;
-    }
-    .fc-daygrid-event {
-        margin-top: 4px !important;
-        margin-bottom: 4px !important;
     }
 </style>
 
@@ -299,11 +265,11 @@
                     </div>
                     <div class="grid grid-cols-2 gap-4 mb-8 text-left">
                         <div class="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Validity</p>
+                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Expires On</p>
                             <p class="text-sm font-black text-slate-800" id="modal-badge-expiry">—</p>
                         </div>
                         <div class="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Badge Type</p>
+                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Refresh In</p>
                             <p class="text-sm font-black text-emerald-500" id="modal-badge-days">—</p>
                         </div>
                     </div>
@@ -463,8 +429,6 @@ function studentDashboard() {
 
         init() {
             this.initCalendar();
-            this.syncQueuedActions();
-            window.addEventListener('online', () => this.syncQueuedActions());
             {% if attendance and not attendance.check_out %}
             const checkInRaw = '{{ attendance.check_in.isoformat() }}{{ tz_offset }}';
             this.checkInTime = new Date(checkInRaw);
@@ -483,38 +447,6 @@ function studentDashboard() {
             {% endif %}
         },
 
-        async syncQueuedActions() {
-            if (!navigator.onLine) return;
-            const queue = JSON.parse(localStorage.getItem('ems_student_queue') || '[]');
-            if (queue.length === 0) return;
-
-            console.log('Syncing student offline actions...', queue);
-            for (const item of queue) {
-                try {
-                    await fetch(item.url, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() }}' },
-                        body: JSON.stringify(item.body)
-                    });
-                } catch(e) { console.error('Sync failed', e); }
-            }
-            localStorage.removeItem('ems_student_queue');
-            window.showToast('✅ Offline records synced.', 'success');
-            setTimeout(() => location.reload(), 1000);
-        },
-
-        queueOffline(type, url, body = {}) {
-            const queue = JSON.parse(localStorage.getItem('ems_student_queue') || '[]');
-            queue.push({ type, url, body, timestamp: new Date().toISOString() });
-            localStorage.setItem('ems_student_queue', JSON.stringify(queue));
-            window.showToast('📡 Saved offline. Will sync when online.', 'warning');
-            
-            if (type === 'checkin') { this.checkedIn = true; this.checkInTime = new Date(); this.startTimer(); }
-            if (type === 'checkout') { this.shiftCompleted = true; this.checkedIn = false; }
-            if (type === 'start_break') { this.onBreak = true; }
-            if (type === 'end_break') { this.onBreak = false; }
-        },
-
         initCalendar() {
             var calendarEl = document.getElementById('calendar');
             const isMob = window.innerWidth < 768;
@@ -526,8 +458,6 @@ function studentDashboard() {
                     right: isMob ? 'listMonth' : 'dayGridMonth,listMonth' 
                 },
                 events: '{{ url_for("staff.attendance_events") }}',
-                // backend includes formatted time in event title; avoid duplicate rendering
-                displayEventTime: false,
                 eventTimeFormat: { hour: 'numeric', minute: '2-digit', meridiem: 'short' },
                 height: 'auto',
                 listDayFormat: { weekday: 'long', day: 'numeric', month: 'short' },
@@ -560,108 +490,29 @@ function studentDashboard() {
             this.shiftTimer = [h, m, s].map(v => v < 10 ? '0' + v : v).join(':');
         },
 
-        getOfflineCheckInQueue() {
-            try {
-                return JSON.parse(localStorage.getItem('attendance_checkin_queue') || '[]');
-            } catch (e) {
-                return [];
-            }
-        },
-
-        setOfflineCheckInQueue(queue) {
-            localStorage.setItem('attendance_checkin_queue', JSON.stringify(queue));
-        },
-
-        queueOfflineCheckIn(payload) {
-            const queue = this.getOfflineCheckInQueue();
-            queue.push({ ...payload, queued_at: new Date().toISOString() });
-            this.setOfflineCheckInQueue(queue);
-            if (window.showToast) window.showToast('Saved locally. It will sync when the connection returns.', 'warning');
-        },
-
-        async syncQueuedCheckIns() {
-            if (!navigator.onLine) return;
-            const queue = this.getOfflineCheckInQueue();
-            if (!queue.length) return;
-
-            const remaining = [];
-            let syncedAny = false;
-
-            for (let payload of queue) {
-                try {
-                    // Do not attempt to enrich queued check-ins with device GPS here.
-
-                    const response = await fetch('{{ url_for("staff.check_in") }}', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() }}' },
-                        body: JSON.stringify(payload)
-                    });
-                    const data = await response.json();
-                    if (data.success || (data.message && data.message.includes('already checked in'))) {
-                        syncedAny = true;
-                    } else {
-                        remaining.push(payload);
-                        break;
-                    }
-                } catch (e) {
-                    remaining.push(payload);
-                    break;
-                }
-            }
-
-            this.setOfflineCheckInQueue(remaining);
-            if (syncedAny && !remaining.length) {
-                if (window.showToast) window.showToast('Pending check-in synced.', 'success');
-                setTimeout(() => location.reload(), 1000);
-            }
-        },
-
         async checkIn() {
-            const url = '{{ url_for("staff.check_in") }}';
-            const body = { client_timestamp: new Date().toISOString() };
             this.loading = true;
-
-            try {
-                const loc = await window.getCheckInLocation();
-                if (loc && !loc.verifiedByQr) {
-                    body.latitude = loc.latitude;
-                    body.longitude = loc.longitude;
-                    body.accuracy = loc.accuracy;
-                }
-            } catch (e) {
-                this.loading = false;
-                if (window.showToast) window.showToast(e.message || 'Location verification is required for check-in.', 'error', 5000);
-                return;
-            }
-
-            if (!navigator.onLine) { this.queueOffline('checkin', url, body); this.loading = false; return; }
-            fetch(url, {
+            fetch('{{ url_for("staff.check_in") }}', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() }}' },
-                body: JSON.stringify(body)
+                body: JSON.stringify({})
             }).then(r => r.json()).then(data => {
                 this.loading = false;
-                if (data.success) { window.showToast('✅ Checked in! Welcome.', 'success'); setTimeout(() => location.reload(), 1000); }
+                if (data.success) { window.showToast('Checked in! Welcome.', 'success'); setTimeout(() => location.reload(), 1000); }
                 else { window.showToast(data.message, 'error'); }
-            }).catch(() => {
-                this.loading = false;
-                this.queueOffline('checkin', url, body);
-            });
+            }).catch(() => { this.loading = false; window.showToast('Check-in failed. Please retry.', 'error'); });
         },
 
         checkOut() {
             if (confirm('Are you sure you want to check out?')) {
-                const url = '{{ url_for("staff.check_out") }}';
-                if (!navigator.onLine) { this.queueOffline('checkout', url); return; }
-
-                fetch(url, {
+                fetch('{{ url_for("staff.check_out") }}', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() }}' },
                     body: JSON.stringify({})
                 }).then(r => r.json()).then(data => {
-                    if (data.success) { window.showToast('👋 Checked out successfully!', 'success'); setTimeout(() => location.reload(), 1500); }
+                    if (data.success) { window.showToast('Checked out successfully!', 'success'); setTimeout(() => location.reload(), 1500); }
                     else { window.showToast(data.message, 'error'); }
-                }).catch(() => this.queueOffline('checkout', url));
+                }).catch(() => window.showToast('Error during check-out.', 'error'));
             }
         },
 
@@ -701,7 +552,7 @@ function studentDashboard() {
                 const expiry = document.getElementById('modal-badge-expiry');
                 const days = document.getElementById('modal-badge-days');
                 if (expiry) expiry.textContent = d.expires_at;
-                if (days) { days.textContent = 'Fixed'; days.className = 'text-sm font-black text-emerald-500'; }
+                if (days) { days.textContent = d.days_until_refresh + 'd'; days.className = 'text-sm font-black ' + (d.days_until_refresh < 30 ? 'text-amber-500' : 'text-emerald-500'); }
                 if (canvas) {
                     canvas.innerHTML = '';
                     new QRCode(canvas, { text: d.badge_url, width: 220, height: 220, colorDark: '#0f172a', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.H });

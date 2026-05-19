@@ -20,12 +20,12 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div class="space-y-3">
                     <label class="block text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Office Latitude</label>
-                    <input type="number" step="any" name="latitude" id="primary-lat" value="{{ settings.latitude if settings else '27.704073' }}" 
+                    <input type="number" step="any" name="latitude" id="primary-lat" value="{{ settings.latitude if settings else '27.7172' }}" 
                         class="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold text-slate-900 focus:ring-4 focus:ring-orange-100 transition shadow-inner">
                 </div>
                 <div class="space-y-3">
                     <label class="block text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Office Longitude</label>
-                    <input type="number" step="any" name="longitude" id="primary-lng" value="{{ settings.longitude if settings else '85.331842' }}" 
+                    <input type="number" step="any" name="longitude" id="primary-lng" value="{{ settings.longitude if settings else '85.3240' }}" 
                         class="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold text-slate-900 focus:ring-4 focus:ring-orange-100 transition shadow-inner">
                 </div>
             </div>
@@ -67,8 +67,8 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             
             <!-- Include existing fields -->
-            <input type="hidden" name="latitude" value="{{ settings.latitude if settings else '27.704073' }}">
-            <input type="hidden" name="longitude" value="{{ settings.longitude if settings else '85.331842' }}">
+            <input type="hidden" name="latitude" value="{{ settings.latitude if settings else '27.7172' }}">
+            <input type="hidden" name="longitude" value="{{ settings.longitude if settings else '85.3240' }}">
             <input type="hidden" name="radius" value="{{ settings.radius if settings else '150' }}">
             <input type="hidden" name="office_ip" value="{{ settings.office_ip if settings else '' }}">
             

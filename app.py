@@ -30,12 +30,7 @@ def create_app(config_name='default'):
     
     # Store scheduler in app for later access
     app.scheduler = scheduler
-    should_start_background_jobs = (
-        not app.debug
-        or os.environ.get('WERKZEUG_RUN_MAIN') == 'true'
-        or os.environ.get('EMS_SINGLE_PROCESS') == '1'
-    )
-    if should_start_background_jobs:
+    if not app.debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
         app.scheduler.start()
 
     # Initialize Talisman (Security Headers & CSP)
@@ -180,7 +175,7 @@ def create_app(config_name='default'):
         monitor = AttendanceMonitor(app)
         monitor.run()
 
-    if should_start_background_jobs:
+    if not app.debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
         # Start monitoring thread as a daemon
         monitor_thread = threading.Thread(target=start_monitoring, daemon=True)
         monitor_thread.start()

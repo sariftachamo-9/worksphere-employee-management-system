@@ -22,12 +22,12 @@ with app.app_context():
     db.create_all()
     
     # Add/Update Admin User
-    admin_email = 'AdmiN@ems.com'
+    admin_email = 'admin@ems.com'
     admin = User.query.filter_by(email=admin_email).first()
     if not admin:
         admin = User(
             email=admin_email,
-            password_hash=generate_password_hash('ADmin@369', method='pbkdf2:sha256'),
+            password_hash=generate_password_hash('AdmiN@369'),
             role='admin'
         )
         db.session.add(admin)
@@ -45,7 +45,7 @@ with app.app_context():
         db.session.add(profile)
     else:
         # Update password for safety if it exists
-        admin.password_hash = generate_password_hash('ADmin@369', method='pbkdf2:sha256')
+        admin.password_hash = generate_password_hash('AdmiN@369')
         
     # Add/Update Other Roles
     other_roles = [
@@ -59,7 +59,7 @@ with app.app_context():
         if not user:
             user = User(
                 email=r_data['email'],
-                password_hash=generate_password_hash(r_data['pass'], method='pbkdf2:sha256'),
+                password_hash=generate_password_hash(r_data['pass']),
                 role=r_data['role']
             )
             db.session.add(user)
@@ -76,7 +76,7 @@ with app.app_context():
             )
             db.session.add(profile)
         else:
-            user.password_hash = generate_password_hash(r_data['pass'], method='pbkdf2:sha256')
+            user.password_hash = generate_password_hash(r_data['pass'])
 
     # Add Office Settings
     if not OfficeSettings.query.first():
@@ -88,4 +88,4 @@ with app.app_context():
         db.session.add(settings)
         
     db.session.commit()
-    print("Database seeded successfully with all roles. Password: ADmin@369")
+    print("Database seeded successfully with all roles. Password: AdmiN@369")

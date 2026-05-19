@@ -98,7 +98,6 @@ document.addEventListener('DOMContentLoaded', function() {
             right: 'dayGridMonth,timeGridWeek'
         },
         events: "{{ url_for('admin.staff_attendance_events', user_id=user.id) }}",
-        displayEventTime: false,
         eventTimeFormat: {
             hour: 'numeric',
             minute: '2-digit',

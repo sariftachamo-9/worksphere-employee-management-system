@@ -333,14 +333,11 @@ class PayrollService:
         working_days = PayrollService._working_days_in_month(year, month)
         daily_rate = monthly_allocation / working_days if working_days else 0
         effective_payable_days = present_days + weekend_paid_days + approved_leave_paid_days + (half_days * 0.5)
+        # Count explicit absent days instead of mathematically assuming absence for missing check-ins
         absent_days = float(len([att for att in attendances if (att.status or 'present') == 'absent']))
         absent_deduction = absent_days * daily_rate
-        
-        # Approved Leave is a paid day, so we do not add it to deductions.
-        # It is already part of the monthly_allocation.
-        leave_deduction = 0.0 
-        
-        deductions = absent_deduction
+        leave_deduction = approved_leave_paid_days * daily_rate
+        deductions = absent_deduction + leave_deduction
         if force_zero_deductions:
             deductions = 0.0
         total_overtime_hours = attendance_ot_hours + approved_tracker_ot_hours

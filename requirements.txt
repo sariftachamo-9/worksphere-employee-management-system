@@ -20,4 +20,3 @@ flask-talisman>=1.1.0
 cryptography>=41.0.7
 pip-audit>=2.7.0
 APScheduler>=3.10.4
-pyngrok>=7.1.0

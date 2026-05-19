@@ -8,19 +8,10 @@
     --glass-border: rgba(255, 255, 255, 0.3);
 }
 
-html {
-    -webkit-text-size-adjust: 100%;
-}
-
 body {
     background-color: var(--bg-slate);
     font-family: 'Inter', sans-serif;
-    min-height: 100%;
     overflow-x: hidden;
-}
-
-img, svg, video, canvas {
-    max-width: 100%;
 }
 
 /* Glassmorphism Classes */
@@ -141,6 +132,7 @@ input:-webkit-autofill:active {
 
 /* Layout Specifics */
 .admin-layout {
+    height: 100vh;
     overflow: hidden;
 }
 
@@ -151,62 +143,8 @@ input:-webkit-autofill:active {
 }
 
 @media (max-width: 768px) {
-    .admin-layout {
-        position: relative;
-        inset: auto;
-        height: auto;
-        min-height: 100dvh;
-        overflow-x: hidden;
-        overflow-y: auto;
-    }
-
-    .admin-layout aside {
-        width: min(85vw, 18rem);
-    }
-
-    .admin-layout .main-scroll {
-        padding: 1rem !important;
-    }
-
     .staff-layout {
-        padding: 0.875rem;
-    }
-
-    .blob {
-        width: 320px;
-        height: 320px;
-        filter: blur(28px);
-    }
-
-    .flash-stack,
-    .toast-stack {
-        left: 0.75rem !important;
-        right: 0.75rem !important;
-        bottom: 0.75rem !important;
-        width: auto !important;
-    }
-
-    .flash-stack > div,
-    .toast-stack > div {
-        width: 100%;
-        min-width: 0 !important;
-        max-width: none;
-    }
-
-    .overflow-x-auto {
-        -webkit-overflow-scrolling: touch;
-    }
-
-    .overflow-x-auto > table,
-    table.responsive-table {
-        width: max-content;
-        min-width: 100%;
-    }
-
-    .overflow-x-auto th,
-    .overflow-x-auto td {
-        padding: 0.75rem 0.875rem !important;
-        font-size: 0.875rem !important;
+        padding: 1rem;
     }
 }
 
