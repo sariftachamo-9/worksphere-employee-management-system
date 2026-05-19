@@ -9,6 +9,7 @@ import secrets
 from utils import location_service
 import uuid
 import base64
+import time
 from io import BytesIO
 import qrcode
 
@@ -111,7 +112,8 @@ def generate_loc_token():
     return jsonify({
         'success': True,
         'token': token,
-        'verify_url': verify_url
+        'verify_url': verify_url,
+        'qr_data_uri': build_qr_data_uri(verify_url)
     })
 
 @qr_bp.route('/verify-location/<token>')
@@ -489,6 +491,7 @@ def qr_login_api():
     login_user(user)
     
     session['session_version'] = current_app.config.get('BOOT_ID')
+    session['recent_location_verified'] = time.time()
     
     # Audit Log for QR Login
     db.session.add(AuditLog(

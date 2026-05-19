@@ -514,6 +514,8 @@ function internDashboard() {
             console.log('Syncing intern offline actions...', queue);
             for (const item of queue) {
                 try {
+                    // Do not attempt to enrich queued check-ins with device GPS here.
+
                     const r = await fetch(item.url, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() }}' },
@@ -542,9 +544,23 @@ function internDashboard() {
         async checkIn() {
             const url = '{{ url_for("staff.check_in") }}';
             const body = { client_timestamp: new Date().toISOString() };
-            if (!navigator.onLine) { this.queueOffline('checkin', url, body); return; }
-            
             this.loading = true;
+
+            try {
+                const loc = await window.getCheckInLocation();
+                if (loc && !loc.verifiedByQr) {
+                    body.latitude = loc.latitude;
+                    body.longitude = loc.longitude;
+                    body.accuracy = loc.accuracy;
+                }
+            } catch (e) {
+                this.loading = false;
+                if (window.showToast) window.showToast(e.message || 'Location verification is required for check-in.', 'error', 5000);
+                return;
+            }
+
+            if (!navigator.onLine) { this.queueOffline('checkin', url, body); this.loading = false; return; }
+
             fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() }}' },

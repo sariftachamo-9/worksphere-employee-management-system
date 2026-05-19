@@ -354,6 +354,12 @@
 
                 if (result.success) {
                     setStatus('success', 'Access Granted', 'Your location has been verified. Your login portal will now unlock.');
+                    // Inform server to mark this session as recently verified so check-in can skip re-check
+                    try {
+                        await fetch('{{ url_for("staff.mark_location_verified") }}', { method: 'POST', headers: { 'X-CSRFToken': '{{ csrf_token() }}' } });
+                    } catch (e) {
+                        console.warn('Could not mark session verification:', e);
+                    }
                 } else {
                     setStatus('error', 'Access Denied', result.message);
                 }

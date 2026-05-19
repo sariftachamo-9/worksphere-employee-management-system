@@ -18,6 +18,7 @@ from utils.overtime_service import (
 from datetime import datetime, timedelta
 from werkzeug.security import check_password_hash, generate_password_hash
 from utils.security_utils import validate_password_strength, validate_nepal_phone_digits
+import time
 
 staff_bp = Blueprint('staff', __name__)
 
@@ -210,6 +211,16 @@ def check_in():
         # Office network users can bypass
         has_bypass = True
 
+    # Recent client-side verification: allow temporary bypass if user verified location recently
+    try:
+        recent_ts = session.get('recent_location_verified')
+        if recent_ts is not None:
+            recent_ts = float(recent_ts)
+            if time.time() - recent_ts <= current_app.config.get('RECENT_LOCATION_WINDOW', 15*60):
+                has_bypass = True
+    except Exception:
+        pass
+
     # ⚠️  MANDATORY: All other users MUST provide valid GPS location
     if not has_bypass:
         if lat is None or lon is None:
@@ -356,6 +367,33 @@ def check_location():
         'message': msg,
         'distance': int(dist) if dist is not None else None
     })
+
+
+@staff_bp.route('/api/mark-location-verified', methods=['POST'])
+@login_required
+def mark_location_verified():
+    """Mark the current session as recently verified by client-side geofence check."""
+    try:
+        session['recent_location_verified'] = time.time()
+        return jsonify({'success': True})
+    except Exception as e:
+        current_app.logger.warning(f"Failed to mark recent location verification: {e}")
+        return jsonify({'success': False}), 500
+
+
+@staff_bp.route('/api/location-verified', methods=['GET'])
+@login_required
+def location_verified():
+    """Return whether the user has a recent location verification in session."""
+    recent = session.get('recent_location_verified')
+    if not recent:
+        return jsonify({'verified': False})
+    try:
+        if time.time() - float(recent) <= current_app.config.get('RECENT_LOCATION_WINDOW', 15*60):
+            return jsonify({'verified': True})
+    except Exception:
+        pass
+    return jsonify({'verified': False})
 
 @staff_bp.route('/start-break', methods=['POST'])
 @login_required

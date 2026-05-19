@@ -49,83 +49,22 @@ def run_dev():
     # Try to use ngrok for public URL testing if installed
     # ONLY start ngrok in the main process, not the reloader child
     if os.environ.get('WERKZEUG_RUN_MAIN') != 'true':
-        ngrok_bin = None
-        
-        # Find ngrok binary (prefer system paths)
-        potential_paths = [
-            "/home/ishan-acharya/.local/bin/ngrok",
-            "/usr/local/bin/ngrok",
-            "/usr/bin/ngrok",
-        ]
-        
-        for path in potential_paths:
-            if os.path.exists(path) and os.access(path, os.X_OK):
-                ngrok_bin = path
-                print(f"[INFO] Found ngrok at: {ngrok_bin}", flush=True)
-                break
-        
-        if ngrok_bin:
-            try:
-                from dotenv import load_dotenv
-                load_dotenv()
-                
-                # Build ngrok command
-                ngrok_cmd = [ngrok_bin, 'http', str(port)]
-                
-                print(f"[INFO] Starting ngrok on port {port}...", flush=True)
-                # Start ngrok in shell background without waiting
-                import subprocess
-                log_path = "/tmp/ngrok.log"
-                log_file = open(log_path, "w", encoding="utf-8")
-                subprocess.Popen(
-                    ngrok_cmd,
-                    stdout=log_file,
-                    stderr=log_file,
-                    start_new_session=True
-                )
-
-                def wait_for_ngrok_url():
-                    log_pattern = re.compile(r"https://[\w\-\.]+ngrok(?:-free)?\.[a-z]+")
-                    last_size = 0
-                    for attempt in range(90):
-                        try:
-                            if os.path.exists(log_path):
-                                with open(log_path, "r", encoding="utf-8", errors="ignore") as handle:
-                                    handle.seek(last_size)
-                                    chunk = handle.read()
-                                    last_size = handle.tell()
-                                match = log_pattern.search(chunk)
-                                if match:
-                                    public_url = match.group(0)
-                                    os.environ['EXTERNAL_URL'] = public_url
-                                    print(f"[INFO] Ngrok public URL: {public_url}", flush=True)
-                                    return public_url
-
-                            with urllib.request.urlopen('http://127.0.0.1:4040/api/tunnels', timeout=1) as resp:
-                                data = json.load(resp)
-                            tunnels = data.get('tunnels', [])
-                            if tunnels:
-                                public_url = tunnels[0].get('public_url')
-                                if public_url:
-                                    os.environ['EXTERNAL_URL'] = public_url
-                                    print(f"[INFO] Ngrok public URL: {public_url}", flush=True)
-                                    return public_url
-                        except Exception:
-                            pass
-
-                        if attempt % 10 == 0:
-                            print("[INFO] Waiting for ngrok public URL...", flush=True)
-                        time.sleep(0.5)
-
-                    print("[INFO] Ngrok tunnel started, but the public URL was not available yet. Check http://127.0.0.1:4040", flush=True)
-                    return None
-
-                wait_for_ngrok_url()
-                
-            except Exception as e:
-                print(f"[WARNING] Error with ngrok: {e}", flush=True)
-        else:
-            print("[INFO] ngrok binary not found. Running without public tunnel.", flush=True)
+        try:
+            from pyngrok import ngrok
+            from dotenv import load_dotenv
+            
+            load_dotenv()
+            
+            print(f"[INFO] Starting ngrok on port {port}...", flush=True)
+            # Connect to ngrok
+            public_url = ngrok.connect(port).public_url
+            os.environ['EXTERNAL_URL'] = public_url
+            # Print with green color highlight
+            print(f"\033[92m[INFO] Ngrok public URL: {public_url}\033[0m", flush=True)
+        except ImportError:
+            print("[INFO] pyngrok not installed. Install it with 'pip install pyngrok' for public tunnel.", flush=True)
+        except Exception as e:
+            print(f"[WARNING] Error with ngrok: {e}", flush=True)
     
     # Start the app
     # Run without the Werkzeug reloader/debugger to avoid multiprocessing native crashes

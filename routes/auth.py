@@ -202,6 +202,7 @@ def login():
                     pass
 
                 session['pending_user_id'] = user.id
+                session['pending_location_verified'] = request.form.get('location_verified') == 'true'
                 flash('Two-Factor Authentication: A security code has been sent to your email.', 'info')
                 return redirect(url_for('auth.verify_otp'))
             else:
@@ -290,6 +291,9 @@ def verify_otp():
             login_user(user)
             session['session_version'] = current_app.config.get('BOOT_ID')
             session.permanent = True # Enable 24-hour location re-verification policy
+            if session.pop('pending_location_verified', False):
+                import time
+                session['recent_location_verified'] = time.time()
             session.pop('pending_user_id', None)
             
             db.session.add(AuditLog(user_id=user.id, action="Login", ip_address=ip))

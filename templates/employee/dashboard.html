@@ -12,104 +12,9 @@
         --dash-bg: #f8fafc;
     }
 
-    /* Skeleton Loading Animation */
     @keyframes skeleton-shimmer {
-        initCalendar() {
-            const el = document.getElementById('calendar');
-            if (!el) return;
-            const isMob = window.innerWidth < 768;
-            const cal = new FullCalendar.Calendar(el, {
-                initialView: isMob ? 'listMonth' : 'dayGridMonth',
-                headerToolbar: {
-                    left: 'prev,next today',
-                    center: 'title',
-                    right: isMob ? 'listMonth' : 'dayGridMonth,listMonth'
-                },
-                events: bridge.eventsUrl,
-                displayEventTime: false,
-                eventTimeFormat: { hour: 'numeric', minute: '2-digit', meridiem: 'short' },
-                height: 'auto',
-                listDayFormat: { weekday: 'long', day: 'numeric', month: 'short' },
-                noEventsContent: 'No attendance records found for this period',
-                eventsSet: (evs) => {
-                    if (cal.view.type === 'dayGridMonth') {
-                        setTimeout(() => {
-                            el.querySelectorAll('.fc-daygrid-day').forEach(cell => {
-                                const d = cell.getAttribute('data-date');
-                                if (d && new Date(d).getDay() === 6 && !evs.some(e => e.start.startsWith(d))) cell.classList.add('saturday-holiday');
-                            });
-                        }, 50);
-                    }
-                }
-            });
-            cal.render();
-            window.addEventListener('resize', () => {
-                const nowMob = window.innerWidth < 768;
-                const currentIsList = cal.view.type === 'listMonth';
-                if (nowMob && !currentIsList) {
-                    cal.changeView('listMonth');
-                    cal.setOption('headerToolbar', { left: 'prev,next today', center: 'title', right: 'listMonth' });
-                } else if (!nowMob && currentIsList) {
-                    cal.changeView('dayGridMonth');
-                    cal.setOption('headerToolbar', { left: 'prev,next today', center: 'title', right: 'dayGridMonth,listMonth' });
-                }
-            });
-        },
-
-        getOfflineCheckInQueue() {
-            try {
-                return JSON.parse(localStorage.getItem('attendance_checkin_queue') || '[]');
-            } catch (e) {
-                return [];
-            }
-        },
-
-        setOfflineCheckInQueue(queue) {
-            localStorage.setItem('attendance_checkin_queue', JSON.stringify(queue));
-        },
-
-        queueOfflineCheckIn(payload) {
-            const queue = this.getOfflineCheckInQueue();
-            queue.push({ ...payload, queued_at: new Date().toISOString() });
-            this.setOfflineCheckInQueue(queue);
-            if (window.showToast) window.showToast('Saved locally. It will sync when the connection returns.', 'warning');
-        },
-
-        async syncQueuedCheckIns() {
-            if (!navigator.onLine) return;
-            const queue = this.getOfflineCheckInQueue();
-            if (!queue.length) return;
-
-            const remaining = [];
-            let syncedAny = false;
-
-            for (const payload of queue) {
-                try {
-                    const response = await fetch(bridge.checkinUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': bridge.csrf },
-                        body: JSON.stringify(payload)
-                    });
-                    const data = await response.json();
-                    if (data.success || (data.message && data.message.includes('already checked in'))) {
-                        syncedAny = true;
-                    } else {
-                        remaining.push(payload);
-                        break;
-                    }
-                } catch (e) {
-                    remaining.push(payload);
-                    break;
-                }
-            }
-
-            this.setOfflineCheckInQueue(remaining);
-            if (syncedAny && !remaining.length) {
-                if (window.showToast) window.showToast('Pending check-in synced.', 'success');
-                setTimeout(() => location.reload(), 1000);
-            }
-        },
-        font-size: 11px;
+        0% { background-position: -200% 0; }
+        100% { background-position: 200% 0; }
     }
     .fc-list-event {
         background: white !important;
@@ -749,15 +654,31 @@ function dashboardUI() {
                 'end_break': bridge.breakEndUrl
             };
             if (type === 'checkout' && !confirm('Submit shift for review?')) return;
-            
-            const body = type === 'checkin' ? { client_timestamp: new Date().toISOString() } : {};
+            this.loading = true;
+
+            const body = { client_timestamp: new Date().toISOString() };
+
+            if (type === 'checkin') {
+                try {
+                    const loc = await window.getCheckInLocation();
+                    body.latitude = loc.latitude;
+                    body.longitude = loc.longitude;
+                    body.accuracy = loc.accuracy;
+                } catch (e) {
+                    if (window.showToast) {
+                        window.showToast(e.message || 'Location access is required for check-in.', 'error', 5000);
+                    }
+                    this.loading = false;
+                    return;
+                }
+            }
 
             if (!navigator.onLine) {
                 this.queueOfflineCheckIn(type, urlMap[type], body);
+                this.loading = false;
                 return;
             }
 
-            this.loading = true;
             try {
                 const r = await fetch(urlMap[type], {
                     method: 'POST',
